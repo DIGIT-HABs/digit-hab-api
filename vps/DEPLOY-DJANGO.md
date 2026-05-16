@@ -344,7 +344,20 @@ Vérifier que le fichier existe :
 
 ```bash
 ls -la /opt/apps/digit-hab-api/media/properties/images/
+
+# 1) Test direct Gunicorn (doit être 200 si SERVE_MEDIA=true + code à jour)
+curl -sI http://127.0.0.1:3004/media/properties/images/image.jpg
+
+# 2) Test public HTTPS
 curl -sI "https://api.digit-hab.wolofdigital.site/media/properties/images/image.jpg"
+```
+
+Si (1) = 404 : `git pull`, `.env` avec `MEDIA_ROOT=/opt/apps/digit-hab-api/media` et `SERVE_MEDIA=true`, redémarrer l’API.
+
+Si (1) = 200 mais (2) = 404 avec `server: gunicorn` : Caddy n’a pas le bloc `handle /media/*` — exécuter :
+
+```bash
+sudo bash /opt/apps/digit-hab-api/Django/vps/install-caddy-media.sh
 ```
 
 Logs :

@@ -3,9 +3,10 @@ Main URL configuration for digit_hab_crm project.
 """
 
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve
 from django.http import JsonResponse
 from drf_spectacular.views import (
     SpectacularAPIView, 
@@ -48,9 +49,17 @@ urlpatterns = [
     path('api/', include('apps.core.urls')),
 ]
 
-# Médias : dev (DEBUG) ou prod avec SERVE_MEDIA=true (repli si Caddy ne sert pas /media/)
-if settings.DEBUG or getattr(settings, 'SERVE_MEDIA', False):
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Médias : dev (DEBUG) ou prod SERVE_MEDIA=true (repli si Caddy ne sert pas /media/)
+_serve_media = settings.DEBUG or getattr(settings, 'SERVE_MEDIA', False)
+if _serve_media:
+    _media_url = settings.MEDIA_URL.lstrip('/').rstrip('/')
+    urlpatterns += [
+        re_path(
+            rf'^{_media_url}/(?P<path>.*)$',
+            serve,
+            {'document_root': str(settings.MEDIA_ROOT)},
+        ),
+    ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

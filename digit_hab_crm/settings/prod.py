@@ -122,8 +122,15 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media files for production (/opt/apps/digit-hab-api/media sur le VPS)
 MEDIA_URL = '/media/'
+PROJECT_ROOT = BASE_DIR.parent
 _media_root_env = os.environ.get('MEDIA_ROOT', '').strip()
-MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR.parent / 'media')
+if _media_root_env:
+    MEDIA_ROOT = Path(_media_root_env).expanduser().resolve()
+else:
+    MEDIA_ROOT = (PROJECT_ROOT / 'media').resolve()
+# Si .env pointe vers un dossier vide mais media/ existe à la racine du projet
+if not MEDIA_ROOT.is_dir() and (PROJECT_ROOT / 'media').is_dir():
+    MEDIA_ROOT = (PROJECT_ROOT / 'media').resolve()
 # Repli si Caddy ne sert pas encore /media/ (désactiver quand Caddy file_server est OK)
 SERVE_MEDIA = os.environ.get('SERVE_MEDIA', 'true').lower() in ('true', '1', 'yes')
 
