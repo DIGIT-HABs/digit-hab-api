@@ -7,7 +7,12 @@
 - ✅ Docker et Docker Compose installés
 - ✅ Accès root ou sudo
 - ✅ DNS configurés
-
+sudo -u deploy bash -lc '
+  cd /opt/apps/digit-hab-api
+  source venv/bin/activate
+  set -a && source .env && set +a
+  python create_test_data_prod.py
+'
 ---
 
 ## 🌐 Étape 1 : Configuration DNS

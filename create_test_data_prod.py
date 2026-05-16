@@ -1,6 +1,16 @@
 """
-Script pour créer des données de test en production
-À exécuter sur le serveur VPS
+Script pour créer des données de test en production.
+À exécuter sur le VPS (pas avec le python système — utiliser le venv) :
+
+    cd /opt/apps/digit-hab-api
+    source venv/bin/activate
+    set -a && source .env && set +a
+    export DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod
+    python create_test_data_prod.py
+
+En tant que root :
+
+    sudo -u deploy bash -lc 'cd /opt/apps/digit-hab-api && source venv/bin/activate && set -a && source .env && set +a && python create_test_data_prod.py'
 """
 
 import os

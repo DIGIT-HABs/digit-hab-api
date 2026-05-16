@@ -4,6 +4,7 @@ Production settings.
 
 from .base import *
 import os
+from pathlib import Path
 
 # Basic production settings
 DEBUG = False
@@ -73,9 +74,20 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').lower() in ['true', 'on'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 
-# File storage - Production (use cloud storage)
-if 'CLOUDINARY_URL' in os.environ:
-    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+# Fichiers uploadés — disque local par défaut (VPS).
+# Cloudinary uniquement si USE_CLOUDINARY=true ET django-cloudinary-storage installé.
+# Ne pas laisser CLOUDINARY_URL seul dans .env : ça provoquait des 500 sur add_image.
+USE_CLOUDINARY = os.environ.get('USE_CLOUDINARY', '').lower() in ('true', '1', 'yes')
+if USE_CLOUDINARY and os.environ.get('CLOUDINARY_URL'):
+    try:
+        import cloudinary_storage  # noqa: F401
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).error(
+            'USE_CLOUDINARY=true mais django-cloudinary-storage absent — stockage local.'
+        )
+    else:
+        DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 # Celery settings for production
 CELERY_TASK_ALWAYS_EAGER = False
@@ -108,9 +120,10 @@ CACHES = {
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Media files for production
+# Media files for production (/opt/apps/digit-hab-api/media sur le VPS)
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR.parent / 'media'  # => /app/media
+_media_root_env = os.environ.get('MEDIA_ROOT', '').strip()
+MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR.parent / 'media')
 
 # Performance optimization
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

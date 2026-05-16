@@ -11,11 +11,25 @@ from .models import Property, PropertyImage, PropertyDocument, PropertyVisit
 
 class PropertyImageSerializer(serializers.ModelSerializer):
     """Serializer for property images."""
-    
+
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = PropertyImage
-        fields = ['id', 'image', 'description', 'thumbnail', 'title', 'description', 'alt_text', 'is_primary', 'order', 'created_at']
+        fields = [
+            'id', 'image', 'thumbnail', 'title', 'description', 'alt_text',
+            'is_primary', 'order', 'created_at',
+        ]
         read_only_fields = ['id', 'thumbnail', 'created_at']
+
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+        request = self.context.get('request')
+        url = obj.image.url
+        if request is not None:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class PropertyDocumentSerializer(serializers.ModelSerializer):

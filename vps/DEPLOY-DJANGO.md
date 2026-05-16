@@ -158,6 +158,19 @@ sudo -u deploy bash -lc '
 '
 ```
 
+### Données de démo (optionnel)
+
+Ne pas lancer avec `python3` système (Django absent). Utiliser le **venv** :
+
+```bash
+sudo -u deploy bash -lc '
+  cd /opt/apps/digit-hab-api
+  source venv/bin/activate
+  set -a && source .env && set +a
+  python create_test_data_prod.py
+'
+```
+
 ## 5. systemd (Gunicorn)
 
 ```bash
@@ -300,6 +313,26 @@ sudo systemctl restart digit-hab-api.service
 ```
 
 Après `git pull`, `prod.py` fusionne aussi les domaines Wolof/Altoppe avec ceux du `.env`.
+
+### Erreur 500 sur `POST /api/properties/.../add_image/`
+
+Causes fréquentes :
+
+1. **`CLOUDINARY_URL` dans `.env` sans `django-cloudinary-storage`** — retirer `CLOUDINARY_URL` ou mettre `USE_CLOUDINARY=false`, puis `sudo systemctl restart digit-hab-api.service`.
+2. **Dossier médias non accessible** par l’utilisateur `deploy` :
+
+```bash
+sudo bash /opt/apps/digit-hab-api/Django/vps/setup-media.sh
+sudo systemctl restart digit-hab-api.service
+```
+
+3. **Caddy ne sert pas `/media/`** — dans le bloc `api.digit-hab.wolofdigital.site`, ajouter `handle_path /media/*` (voir `vps/caddy/Caddyfile`), puis `sudo systemctl reload caddy`.
+
+Logs :
+
+```bash
+sudo journalctl -u digit-hab-api.service -n 80 --no-pager | grep -i add_image
+```
 
 ### Caddy : erreurs ACME `apisign.wolofdigtal.com` NXDOMAIN
 

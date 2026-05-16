@@ -22,10 +22,9 @@ wifi.wolofdigital.site {
 
 # Digit-Hab — API Django (Gunicorn systemd ou Docker sur 3004)
 api.digit-hab.wolofdigital.site {
+	handle_path /media/* {
+		root * /opt/apps/digit-hab-api/media
+		file_server
+	}
 	reverse_proxy 127.0.0.1:3004
-	# Optionnel — fichiers uploadés (si MEDIA_ROOT = /opt/apps/digit-hab-api/media)
-	# handle_path /media/* {
-	# 	root * /opt/apps/digit-hab-api
-	# 	file_server
-	# }
 }

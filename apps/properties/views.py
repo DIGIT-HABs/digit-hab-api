@@ -2,8 +2,11 @@
 Views for property management.
 """
 
+import logging
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.exceptions import NotFound
@@ -26,6 +29,8 @@ from .permissions import (
     CanUploadDocuments, CanUploadImages
 )
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class PropertyViewSet(viewsets.ModelViewSet):
@@ -166,54 +171,64 @@ class PropertyViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    @action(detail=True, methods=['post'])
+    @action(
+        detail=True,
+        methods=['post'],
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def add_image(self, request, pk=None):
         """Add an image to a property."""
         property_obj = self.get_object()
-        
-        # Debug logging
-        print("=" * 50)
-        print("ADD IMAGE REQUEST")
-        print("FILES:", request.FILES)
-        print("DATA:", request.data)
-        print("Content-Type:", request.content_type)
-        print("Property ID:", pk)
-        print("User:", request.user)
-        print("=" * 50)
-        
-        # Check permissions
+
         if not CanUploadImages().has_object_permission(request, self, property_obj):
             return Response(
                 {'error': 'Vous n\'avez pas la permission d\'ajouter des images.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
         image_data = request.FILES.get('image')
-        
-        # Convert is_primary from string to boolean (FormData sends strings)
         is_primary_raw = request.data.get('is_primary', 'false')
         is_primary = is_primary_raw in ['true', 'True', '1', True, 1]
-        
+
         if not image_data:
-            print("ERROR: No image data found in request.FILES")
             return Response(
-                {'error': 'Une image est requise.'},
+                {'error': 'Une image est requise (champ multipart « image »).'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        # If setting as primary, unset other primary images
-        if is_primary:
-            PropertyImage.objects.filter(property=property_obj, is_primary=True).update(is_primary=False)
-        
-        # Create image (PropertyImage n'a pas de champ 'caption', mais 'title', 'description', 'alt_text')
-        image = PropertyImage.objects.create(
-            property=property_obj,
-            image=image_data,
-            is_primary=is_primary
-        )
-        
-        serializer = PropertyImageSerializer(image)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        try:
+            if is_primary:
+                PropertyImage.objects.filter(
+                    property=property_obj, is_primary=True
+                ).update(is_primary=False)
+
+            image = PropertyImage.objects.create(
+                property=property_obj,
+                image=image_data,
+                is_primary=is_primary,
+            )
+            serializer = PropertyImageSerializer(
+                image, context={'request': request}
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except OSError as exc:
+            logger.exception('add_image: écriture fichier impossible (permissions MEDIA_ROOT?)')
+            return Response(
+                {
+                    'error': 'Impossible d\'enregistrer l\'image sur le serveur.',
+                    'detail': str(exc),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except Exception as exc:
+            logger.exception('add_image failed property=%s user=%s', pk, request.user)
+            return Response(
+                {
+                    'error': 'Erreur lors de l\'enregistrement de l\'image.',
+                    'detail': str(exc),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
     
     @action(detail=True, methods=['delete'], url_path='delete_image/(?P<image_id>[^/.]+)')
     def delete_image(self, request, pk=None, image_id=None):
