@@ -8,15 +8,17 @@ import os
 # Basic production settings
 DEBUG = False
 
-# Allowed Hosts - from environment variable or defaults
-allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
-ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()] or [
+# Allowed Hosts — fusion .env + défauts (évite DisallowedHost si .env oublie un domaine)
+_default_allowed_hosts = [
     'digit-hab.altoppe.sn',
     'api.digit-hab.altoppe.sn',
     'api.digit-hab.wolofdigital.site',
     'localhost',
     '127.0.0.1',
 ]
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
+_env_hosts = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+ALLOWED_HOSTS = list(dict.fromkeys(_env_hosts + _default_allowed_hosts))
 
 # Security settings
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -35,16 +37,14 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 
 # CSRF Trusted Origins for HTTPS
-_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in _csrf_origins_env.split(',')
-    if origin.strip()
-] or [
+_default_csrf_origins = [
     'https://digit-hab.altoppe.sn',
     'https://api.digit-hab.altoppe.sn',
     'https://api.digit-hab.wolofdigital.site',
 ]
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+_env_csrf = [origin.strip() for origin in _csrf_origins_env.split(',') if origin.strip()]
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys(_env_csrf + _default_csrf_origins))
 
 # Content Security Policy
 SECURE_CONTENT_TYPE_NOSNIFF = True

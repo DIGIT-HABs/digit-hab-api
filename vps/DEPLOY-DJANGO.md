@@ -275,6 +275,36 @@ Si Digit-Hab utilisait Docker sur l’autre machine, vous pouvez lancer les mêm
 
 Ne exposez pas Postgres sur `0.0.0.0` ; l’app Django se connecte en `127.0.0.1`.
 
+## Dépannage : `Bad Request (400)` sur `/admin`
+
+Cause habituelle : **`DisallowedHost`** — le `.env` définit `ALLOWED_HOSTS` sans `api.digit-hab.wolofdigital.site`, et Django rejette la requête (Caddy et TLS peuvent être OK).
+
+```bash
+# Vérifier les hôtes chargés par Gunicorn
+sudo -u deploy bash -lc '
+  cd /opt/apps/digit-hab-api
+  set -a && source .env && set +a
+  export DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod
+  python -c "from django.conf import settings; print(settings.ALLOWED_HOSTS)"
+'
+
+# Test direct (doit renvoyer 302 vers /admin/login/, pas 400)
+curl -sI -H "Host: api.digit-hab.wolofdigital.site" http://127.0.0.1:3004/admin/
+
+# Corriger .env puis redémarrer
+grep -E '^(ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|DJANGO_SETTINGS_MODULE)=' .env
+# DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod
+# ALLOWED_HOSTS=api.digit-hab.wolofdigital.site,127.0.0.1,localhost
+# CSRF_TRUSTED_ORIGINS=https://api.digit-hab.wolofdigital.site
+sudo systemctl restart digit-hab-api.service
+```
+
+Après `git pull`, `prod.py` fusionne aussi les domaines Wolof/Altoppe avec ceux du `.env`.
+
+### Caddy : erreurs ACME `apisign.wolofdigtal.com` NXDOMAIN
+
+Le bloc `apisign.wolofdigtal.com` (faute de frappe) ou un domaine sans enregistrement DNS fait échouer Let’s Encrypt pour ce site uniquement. Commentez les blocs inutilisés dans `/etc/caddy/Caddyfile`, puis `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy`.
+
 ## Récap des ports sur ce VPS
 
 | Port | Service |

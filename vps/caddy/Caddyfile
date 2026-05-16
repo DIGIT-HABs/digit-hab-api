@@ -10,15 +10,15 @@ wifi.wolofdigital.site {
 	reverse_proxy 127.0.0.1:3001
 }
 
-# wolof Sign
-apisign.wolofdigtal.com {
-	reverse_proxy 127.0.0.1:3002
-}
+# wolof Sign — décommenter quand le DNS existe (sinon erreurs ACME NXDOMAIN)
+# apisign.wolofdigital.com {
+# 	reverse_proxy 127.0.0.1:3002
+# }
 
-# e-wolof — plateforme éducation
-apie.wolofdigital.com {
-	reverse_proxy 127.0.0.1:3003
-}
+# e-wolof — décommenter si le service tourne sur 3003
+# apie.wolofdigital.com {
+# 	reverse_proxy 127.0.0.1:3003
+# }
 
 # Digit-Hab — API Django (Gunicorn systemd ou Docker sur 3004)
 api.digit-hab.wolofdigital.site {
