@@ -218,7 +218,53 @@ Si l’API tourne déjà ailleurs, sur **l’ancien serveur** notez :
 
 Copiez le dépôt + `.env` (sans le commiter), recréez le venv sur ce VPS, puis utilisez le port **3004** et le domaine ci-dessus. Si la base reste sur l’ancien VPS, ouvrez le pare-feu PostgreSQL ou migrez la DB vers ce VPS.
 
-## 8. Option PostgreSQL / Redis sur le même VPS
+## 8. PostgreSQL sur le VPS (sans Docker)
+
+Si vous n’avez pas encore Postgres :
+
+```bash
+# .env doit contenir DB_NAME, DB_USER, DB_PASSWORD, DB_HOST=127.0.0.1
+sudo bash /opt/apps/digit-hab-api/Django/vps/setup-postgres.sh
+
+sudo -u deploy bash -lc '
+  cd /opt/apps/digit-hab-api
+  source venv/bin/activate
+  set -a && source .env && set +a
+  python manage.py migrate --noinput
+  python manage.py collectstatic --noinput
+'
+sudo systemctl restart digit-hab-api.service
+```
+
+Création manuelle (alternative) :
+
+```bash
+sudo apt install -y postgresql postgresql-contrib
+sudo -u postgres psql
+```
+
+Dans `psql` :
+
+```sql
+CREATE USER digit_hab_crm_user WITH PASSWORD 'votre_mot_de_passe';
+CREATE DATABASE digit_hab_crm_prod OWNER digit_hab_crm_user;
+GRANT ALL PRIVILEGES ON DATABASE digit_hab_crm_prod TO digit_hab_crm_user;
+\q
+```
+
+Puis sur la base :
+
+```bash
+sudo -u postgres psql -d digit_hab_crm_prod -c "GRANT ALL ON SCHEMA public TO digit_hab_crm_user;"
+```
+
+Test :
+
+```bash
+PGPASSWORD='votre_mot_de_passe' psql -h 127.0.0.1 -U digit_hab_crm_user -d digit_hab_crm_prod -c '\dt'
+```
+
+## 9. Option PostgreSQL / Redis sur le même VPS (Docker)
 
 Si Digit-Hab utilisait Docker sur l’autre machine, vous pouvez lancer les mêmes services en local (ports non exposés publiquement) ou un conteneur :
 
