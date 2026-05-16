@@ -48,11 +48,11 @@ urlpatterns = [
     path('api/', include('apps.core.urls')),
 ]
 
-# Serve media files in development
-if settings.DEBUG:
+# Médias : dev (DEBUG) ou prod avec SERVE_MEDIA=true (repli si Caddy ne sert pas /media/)
+if settings.DEBUG or getattr(settings, 'SERVE_MEDIA', False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    
-    # Debug toolbar
     import debug_toolbar
     urlpatterns += [path('__debug__/', include(debug_toolbar.urls))]

@@ -42,6 +42,21 @@ echo "--- Public HTTPS ---"
 curl -sS -o /dev/null -w "HTTPS %{http_code}\n" "https://$DOMAIN/health/" || echo "curl HTTPS FAILED (souvent: backend 3004 down ou cert ACME)"
 echo
 
+echo "--- Media directory ---"
+MEDIA_DIR="$APP_DIR/media"
+if [[ -d "$MEDIA_DIR" ]]; then
+  ls -la "$MEDIA_DIR/properties/images/" 2>/dev/null | tail -n 5 || echo "(aucune image dans properties/images/)"
+  SAMPLE=$(find "$MEDIA_DIR/properties/images" -type f 2>/dev/null | head -n 1)
+  if [[ -n "$SAMPLE" ]]; then
+    REL="${SAMPLE#$MEDIA_DIR}"
+    echo "Test fichier: /media$REL"
+    curl -sS -o /dev/null -w "media HTTPS %{http_code}\n" "https://$DOMAIN/media$REL" || true
+  fi
+else
+  echo "MANQUANT: $MEDIA_DIR — sudo bash Django/vps/setup-media.sh"
+fi
+echo
+
 if [[ -f "$APP_DIR/.env" ]]; then
   echo "--- .env (clés présentes, sans valeurs) ---"
   grep -E '^[A-Z_]+=' "$APP_DIR/.env" | cut -d= -f1 | sort

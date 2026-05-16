@@ -124,6 +124,8 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 _media_root_env = os.environ.get('MEDIA_ROOT', '').strip()
 MEDIA_ROOT = Path(_media_root_env) if _media_root_env else (BASE_DIR.parent / 'media')
+# Repli si Caddy ne sert pas encore /media/ (désactiver quand Caddy file_server est OK)
+SERVE_MEDIA = os.environ.get('SERVE_MEDIA', 'true').lower() in ('true', '1', 'yes')
 
 # Performance optimization
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

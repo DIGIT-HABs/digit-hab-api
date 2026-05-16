@@ -326,7 +326,26 @@ sudo bash /opt/apps/digit-hab-api/Django/vps/setup-media.sh
 sudo systemctl restart digit-hab-api.service
 ```
 
-3. **Caddy ne sert pas `/media/`** — dans le bloc `api.digit-hab.wolofdigital.site`, ajouter `handle_path /media/*` (voir `vps/caddy/Caddyfile`), puis `sudo systemctl reload caddy`.
+3. **Image uploadée mais URL `/media/...` en 404** — soit activer le repli Django (`SERVE_MEDIA=true` dans `.env`, redémarrer l’API), soit configurer Caddy **avant** le `reverse_proxy` :
+
+```caddy
+api.digit-hab.wolofdigital.site {
+    handle /media/* {
+        root * /opt/apps/digit-hab-api
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3004
+    }
+}
+```
+
+Vérifier que le fichier existe :
+
+```bash
+ls -la /opt/apps/digit-hab-api/media/properties/images/
+curl -sI "https://api.digit-hab.wolofdigital.site/media/properties/images/image.jpg"
+```
 
 Logs :
 

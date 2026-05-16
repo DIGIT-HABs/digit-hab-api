@@ -21,10 +21,13 @@ wifi.wolofdigital.site {
 # }
 
 # Digit-Hab — API Django (Gunicorn systemd ou Docker sur 3004)
+# /media/* doit être servi par Caddy AVANT le reverse_proxy (sinon 404 Django).
 api.digit-hab.wolofdigital.site {
-	handle_path /media/* {
-		root * /opt/apps/digit-hab-api/media
+	handle /media/* {
+		root * /opt/apps/digit-hab-api
 		file_server
 	}
-	reverse_proxy 127.0.0.1:3004
+	handle {
+		reverse_proxy 127.0.0.1:3004
+	}
 }
