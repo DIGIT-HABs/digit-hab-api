@@ -28,12 +28,16 @@ if ! grep -q 'digit_hab_crm.wsgi:application' "$UNIT"; then
   exit 1
 fi
 
-if ! grep -q 'digit_hab_crm.settings.prod' "$UNIT"; then
-  if grep -q 'Environment=DJANGO_SETTINGS_MODULE=' "$UNIT"; then
+if ! grep -q 'DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod' "$UNIT"; then
+  if grep -q '^Environment=DJANGO_SETTINGS_MODULE=' "$UNIT"; then
     sed -i 's/^Environment=DJANGO_SETTINGS_MODULE=.*/Environment=DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod/' "$UNIT"
   else
-    sed -i '/^\[Service\]/a Environment=DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod' "$UNIT"
+    sed -i '/^WorkingDirectory=/a Environment=DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod' "$UNIT"
   fi
+fi
+
+if ! grep -q 'EnvironmentFile=-/opt/apps/digit-hab-api/.env' "$UNIT"; then
+  sed -i '/^Environment=DJANGO_SETTINGS_MODULE=/a EnvironmentFile=-/opt/apps/digit-hab-api/.env' "$UNIT"
 fi
 
 systemctl daemon-reload
