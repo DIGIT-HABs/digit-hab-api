@@ -1,0 +1,25 @@
+# Modèle systemd : une instance par projet.
+# Fichiers : /etc/systemd/system/node-app@NOM.service
+#
+# Exemple après copie et édition des chemins :
+#   sudo systemctl enable --now node-app@wolof-api.service
+#
+# Variables à adapter dans l'unit concrète (voir README) :
+#   User, WorkingDirectory, EnvironmentFile, ExecStart (port)
+
+[Unit]
+Description=Node app (%i)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/apps/%i
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/apps/%i/.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

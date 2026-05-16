@@ -1,0 +1,23 @@
+# Copier : sudo cp wolof-wifi-pay.service.example /etc/systemd/system/wolof-wifi-pay.service
+# Puis : sudo systemctl daemon-reload && sudo systemctl enable --now wolof-wifi-pay.service
+
+[Unit]
+Description=Wolof WiFi Pay (TanStack Start + Nitro sur 3001)
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/apps/wolof-wifi-pay
+Environment=NODE_ENV=production
+Environment=NITRO_HOST=127.0.0.1
+Environment=NITRO_PORT=3001
+EnvironmentFile=-/opt/apps/wolof-wifi-pay/.env
+ExecStart=/usr/bin/node /opt/apps/wolof-wifi-pay/.output/server/index.mjs
+Restart=on-failure
+RestartSec=5
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

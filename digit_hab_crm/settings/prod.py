@@ -13,9 +13,9 @@ allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()] or [
     'digit-hab.altoppe.sn',
     'api.digit-hab.altoppe.sn',
+    'api.digit-hab.wolofdigital.site',
     'localhost',
     '127.0.0.1',
-    '192.168.1.3',
 ]
 
 # Security settings
@@ -35,9 +35,15 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 
 # CSRF Trusted Origins for HTTPS
+_csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in _csrf_origins_env.split(',')
+    if origin.strip()
+] or [
     'https://digit-hab.altoppe.sn',
     'https://api.digit-hab.altoppe.sn',
+    'https://api.digit-hab.wolofdigital.site',
 ]
 
 # Content Security Policy
@@ -77,9 +83,14 @@ CELERY_EAGER_PROPAGATES_EXCEPTIONS = False
 
 # CORS for production
 CORS_ALLOW_ALL_ORIGINS = True
+_cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in _cors_origins_env.split(',')
+    if origin.strip()
+] or [
     'https://api.digit-hab.altoppe.sn',
-    'https://www.your-domain.com',
+    'https://api.digit-hab.wolofdigital.site',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
 ]

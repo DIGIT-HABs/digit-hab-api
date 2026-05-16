@@ -1,0 +1,31 @@
+# DNS : enregistrements A (et AAAA si IPv6) → IP du VPS (ex. 31.207.37.80).
+# Remplacez l’email ci-dessous (Let’s Encrypt / notifications ACME).
+
+{
+	email contact@wolofdigital.com
+}
+
+# Wolof WiFi Pay — backend / service sur le VPS (port à aligner avec systemd)
+wifi.wolofdigital.site {
+	reverse_proxy 127.0.0.1:3001
+}
+
+# wolof Sign
+apisign.wolofdigtal.com {
+	reverse_proxy 127.0.0.1:3002
+}
+
+# e-wolof — plateforme éducation
+apie.wolofdigital.com {
+	reverse_proxy 127.0.0.1:3003
+}
+
+# Digit-Hab — API Django (Gunicorn systemd ou Docker sur 3004)
+api.digit-hab.wolofdigital.site {
+	reverse_proxy 127.0.0.1:3004
+	# Optionnel — fichiers uploadés (si MEDIA_ROOT = /opt/apps/digit-hab-api/media)
+	# handle_path /media/* {
+	# 	root * /opt/apps/digit-hab-api
+	# 	file_server
+	# }
+}

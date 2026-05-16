@@ -1,0 +1,38 @@
+# Digit-Hab API — Gunicorn sur 127.0.0.1:3004
+# Projet : https://github.com/DIGIT-HABs/digit-hab-api
+# WSGI : digit_hab_crm.wsgi:application
+# Settings prod : digit_hab_crm.settings.prod
+#
+# Prérequis : PostgreSQL + Redis accessibles (DB_HOST / REDIS_URL dans .env).
+# Alternative plus simple : Docker Compose (voir DEPLOY-DJANGO.md § Docker).
+#
+# sudo cp .../digit-hab-api.service.example /etc/systemd/system/digit-hab-api.service
+# sudo systemctl daemon-reload && sudo systemctl enable --now digit-hab-api.service
+
+[Unit]
+Description=Digit-Hab API (Django + Gunicorn sur 3004)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/apps/digit-hab-api
+Environment=PYTHONUNBUFFERED=1
+Environment=DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod
+EnvironmentFile=-/opt/apps/digit-hab-api/.env
+ExecStart=/opt/apps/digit-hab-api/venv/bin/gunicorn digit_hab_crm.wsgi:application \
+  --bind 127.0.0.1:3004 \
+  --workers 3 \
+  --worker-class gthread \
+  --threads 2 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile -
+Restart=on-failure
+RestartSec=5
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

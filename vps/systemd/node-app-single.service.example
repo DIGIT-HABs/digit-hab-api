@@ -1,0 +1,22 @@
+# Copier vers /etc/systemd/system/NOM.service puis adapter WorkingDirectory + ExecStart.
+# Le tiret devant EnvironmentFile = fichier optionnel (sinon systemd refuse de démarrer si .env absent).
+# Exemple prêt à l’emploi pour le WiFi : voir wolof-wifi-pay.service.example
+
+[Unit]
+Description=Mon API Node
+After=network.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/apps/mon-projet
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/apps/mon-projet/.env
+ExecStart=/usr/bin/node /opt/apps/mon-projet/dist/server.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

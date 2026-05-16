@@ -1,0 +1,12 @@
+# Overlay VPS Wolof-Wave : expose Gunicorn Docker sur 127.0.0.1:3004 pour Caddy
+# Usage sur le VPS :
+#   cd /opt/apps/digit-hab-api
+#   docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml up -d --build
+#
+# Caddy : reverse_proxy 127.0.0.1:3004
+# Pas besoin de digit-hab-api.service systemd si vous utilisez uniquement Docker.
+
+services:
+  web:
+    ports:
+      - "127.0.0.1:3004:8000"
