@@ -18,7 +18,7 @@ websocket_urlpatterns = [
     re_path(r"ws/notifications/group/(?P<group_id>[^/]+)/$", NotificationConsumer.as_asgi()),
     
     # Notifications par propriété
-    re_path(r"ws/notifications/property/(?P<property_id>\d+)/$", NotificationConsumer.as_asgi()),
+    re_path(r"ws/notifications/property/(?P<property_id>[^/]+)/$", NotificationConsumer.as_asgi()),
     
     # Notifications par réservation
     re_path(r"ws/notifications/reservation/(?P<reservation_id>[^/]+)/$", NotificationConsumer.as_asgi()),

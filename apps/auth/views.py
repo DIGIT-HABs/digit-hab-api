@@ -126,9 +126,29 @@ class UserViewSet(ModelViewSet):
     @action(detail=False, methods=['post'])
     def request_password_reset(self, request):
         """Request password reset."""
+        import logging
+        from django.conf import settings
+        from django.core.mail import send_mail
+
+        logger = logging.getLogger(__name__)
         serializer = PasswordResetSerializer(data=request.data)
         if serializer.is_valid():
-            # TODO: Send password reset email
+            email = serializer.validated_data['email']
+            user = UserModel.objects.get(email=email)
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            frontend = getattr(settings, 'FRONTEND_URL', 'https://api.digit-hab.wolofdigital.site')
+            reset_link = f'{frontend}/reset-password?uid={uid}&token={token}'
+            subject = 'Réinitialisation de votre mot de passe DIGIT-HAB'
+            body = (
+                f'Bonjour,\n\n'
+                f'Pour réinitialiser votre mot de passe, utilisez ce lien :\n{reset_link}\n\n'
+                f'Si vous n\'êtes pas à l\'origine de cette demande, ignorez ce message.'
+            )
+            if settings.EMAIL_HOST_USER:
+                send_mail(subject, body, settings.EMAIL_HOST_USER, [email], fail_silently=False)
+            else:
+                logger.warning('Password reset (email non configuré): %s', reset_link)
             return Response(
                 {"message": "Password reset email sent."},
                 status=status.HTTP_200_OK
@@ -154,12 +174,13 @@ class UserProfileViewSet(ReadOnlyModelViewSet):
     """
     
     serializer_class = UserProfileSerializer
-    permission_classes = [AllowAny]  # Temporarily allow any to debug
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Return user profiles based on permissions."""
-        # Return empty queryset for now to avoid UUID issues
-        return UserProfile.objects.none()
+        user = self.request.user
+        if user.is_superuser or getattr(user, 'role', None) == 'admin':
+            return UserProfile.objects.select_related('user').all()
+        return UserProfile.objects.select_related('user').filter(user=user)
 
 
 @extend_schema_view(

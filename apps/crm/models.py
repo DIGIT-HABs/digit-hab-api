@@ -591,16 +591,18 @@ class Lead(models.Model):
             self.status = 'contacted'
         self.save()
         
-        # Log assignment
-        from apps.core.models import ActivityLog
-        from django.contrib.contenttypes.models import ContentType
-        
-        ActivityLog.objects.create(
+        from apps.core.activity import log_activity
+
+        log_activity(
             user=agent,
+            component='clients',
             action='LEAD_ASSIGNED',
-            content_type=ContentType.objects.get_for_model(self),
-            object_id=self.id,
-            changes={'assigned_to': str(agent)}
+            message=f'Lead assigné à {agent}',
+            metadata={
+                'object_type': 'Lead',
+                'object_id': str(self.id),
+                'assigned_to': str(agent.id),
+            },
         )
     
     def __str__(self):

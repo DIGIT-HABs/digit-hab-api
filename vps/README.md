@@ -133,7 +133,7 @@ Les avertissements TLS du type *« looking up info for HTTP challenge »* dans l
   digit-hab-api/    # 127.0.0.1:3004  → api.digit-hab.wolofdigital.site
 ```
 
-API Django Digit-Hab : voir **`DEPLOY-DJANGO.md`**.
+API Django Digit-Hab : guide complet **`DEPLOY-DJANGO.md`** (DNS, Postgres, `.env`, Gunicorn, Caddy, médias, dépannage).
 
 Chaque app doit **écouter sur localhost** (sécurité) : `127.0.0.1:PORT`, pas `0.0.0.0` si vous ne voulez pas l’exposer sans passer par Caddy.
 

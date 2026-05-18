@@ -481,7 +481,7 @@ class CalendarConflictViewSet(viewsets.ReadOnlyModelViewSet):
         # Les agents voient les conflits de leurs planifications
         try:
             if hasattr(user, 'profile') and user.profile:
-                if user.profile.role in ['agent', 'manager', 'admin']:
+                if getattr(user, 'role', None) in ['agent', 'manager', 'admin']:
                     return CalendarConflict.objects.filter(
                         Q(schedule1__agent=user) |
                         Q(schedule2__agent=user)
@@ -505,7 +505,7 @@ class CalendarConflictViewSet(viewsets.ReadOnlyModelViewSet):
         # Vérifier les permissions
         if not (request.user.is_superuser or 
                 request.user.is_staff or
-                request.user.profile.role in ['agent', 'manager', 'admin']):
+                getattr(request.user, 'role', None) in ['agent', 'manager', 'admin']):
             return Response(
                 {'error': 'Permissions insuffisantes'},
                 status=status.HTTP_403_FORBIDDEN
@@ -567,7 +567,7 @@ class ScheduleMetricsViewSet(viewsets.ReadOnlyModelViewSet):
         # Les agents voient leurs propres métriques
         try:
             if hasattr(user, 'profile') and user.profile:
-                if user.profile.role in ['agent', 'manager', 'admin']:
+                if getattr(user, 'role', None) in ['agent', 'manager', 'admin']:
                     return ScheduleMetrics.objects.filter(agent=user).select_related('agent')
         except AttributeError:
             pass

@@ -166,7 +166,7 @@ class Notification(models.Model):
     
     # Objet lié (GenericForeignKey)
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True, blank=True)
-    object_id = models.PositiveIntegerField(null=True, blank=True)
+    object_id = models.UUIDField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
     
     # État
@@ -291,7 +291,7 @@ class NotificationSubscription(models.Model):
         ('reservation', 'Réservation'),
     ])
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE, null=True, blank=True)
-    object_id = models.PositiveIntegerField(null=True, blank=True)
+    object_id = models.UUIDField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
     
     # État

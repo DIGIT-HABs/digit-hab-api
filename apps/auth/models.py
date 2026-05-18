@@ -46,6 +46,7 @@ class User(AbstractUser):
         choices=[
             ('client', 'Client'),
             ('agent', 'Agent'),
+            ('manager', 'Manager'),
             ('admin', 'Administrateur'),
         ],
         default='client',

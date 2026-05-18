@@ -6,10 +6,6 @@ __pycache__/
 .expo/
 
 
-# Django migrations
-*/migrations/
-!*/migrations/__init__.py
-
 # Environnements virtuels
 venv/
 .env/

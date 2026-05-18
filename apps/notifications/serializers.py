@@ -140,7 +140,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     recipient_id = serializers.UUIDField(write_only=True, required=False)
     template_id = serializers.UUIDField(write_only=True, required=False)
     content_type_id = serializers.IntegerField(write_only=True, required=False)
-    object_id = serializers.IntegerField(write_only=True, required=False)
+    object_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = Notification
@@ -247,7 +247,7 @@ class NotificationCreateSerializer(serializers.Serializer):
     
     # Objet lié
     content_type_id = serializers.IntegerField(required=False)
-    object_id = serializers.IntegerField(required=False)
+    object_id = serializers.UUIDField(required=False, allow_null=True)
     
     # Canaux
     channels = serializers.ListField(
@@ -291,7 +291,7 @@ class NotificationSubscriptionSerializer(serializers.ModelSerializer):
     
     # Champs pour la création
     content_type_id = serializers.IntegerField(write_only=True, required=False)
-    object_id = serializers.IntegerField(write_only=True, required=False)
+    object_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = NotificationSubscription

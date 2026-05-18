@@ -57,6 +57,38 @@ def handle_notification_status_change(sender, instance, created, **kwargs):
 # SIGNALS POUR LES MODÈLES EXISTANTS
 # ============================================================================
 
+def _cache_status_pre_save(sender, instance, field_name='status', attr='_prev_status'):
+    """Store previous status before save (for post_save comparisons)."""
+    if instance.pk:
+        setattr(
+            instance,
+            attr,
+            sender.objects.filter(pk=instance.pk).values_list(field_name, flat=True).first(),
+        )
+    else:
+        setattr(instance, attr, None)
+
+
+@receiver(pre_save, sender='reservations.Reservation')
+def cache_reservation_status(sender, instance, **kwargs):
+    _cache_status_pre_save(sender, instance)
+
+
+@receiver(pre_save, sender='reservations.Payment')
+def cache_payment_status(sender, instance, **kwargs):
+    _cache_status_pre_save(sender, instance)
+
+
+@receiver(pre_save, sender='properties.Property')
+def cache_property_status(sender, instance, **kwargs):
+    _cache_status_pre_save(sender, instance)
+
+
+@receiver(pre_save, sender='crm.ClientProfile')
+def cache_client_profile_status(sender, instance, **kwargs):
+    _cache_status_pre_save(sender, instance)
+
+
 def _reservation_client_user_id(reservation):
     """ID utilisateur client pour une réservation (client_profile.user ou created_by)."""
     if getattr(reservation, 'client_profile', None) and getattr(reservation.client_profile, 'user_id', None):
@@ -107,15 +139,11 @@ def handle_reservation_status_change(sender, instance, created, **kwargs):
 
         transaction.on_commit(do_notify_created)
     else:
-        try:
-            old_instance = sender.objects.get(id=instance.id)
-            old_status = old_instance.status
-        except Exception:
-            old_status = None
+        old_status = getattr(instance, '_prev_status', None)
 
         def do_notify_updated_with_old():
             try:
-                from .models import Reservation
+                from apps.reservations.models import Reservation
                 res = Reservation.objects.get(id=reservation_id)
                 client_id_late = _reservation_client_user_id(res)
                 agent_late = getattr(res, 'assigned_agent', None) or (getattr(res.property, 'agent', None) if getattr(res, 'property', None) else None)
@@ -176,10 +204,8 @@ def handle_payment_status_change(sender, instance, created, **kwargs):
             )
         
         else:
-            # Vérifier les changements de statut
-            old_instance = sender.objects.get(id=instance.id)
-            
-            if old_instance.status != instance.status:
+            old_status = getattr(instance, '_prev_status', None)
+            if old_status is not None and old_status != instance.status:
                 if instance.status == 'completed':
                     NotificationService.create_notification(
                         recipient_ids=[client_id],
@@ -227,11 +253,8 @@ def handle_property_status_change(sender, instance, created, **kwargs):
     
     try:
         if not created:
-            # Vérifier les changements importants
-            old_instance = sender.objects.get(id=instance.id)
-            
-            # Changement de statut (disponible, réservé, vendu, etc.)
-            if old_instance.status != instance.status:
+            old_status = getattr(instance, '_prev_status', None)
+            if old_status is not None and old_status != instance.status:
                 # Notifier les agents et administrateurs
                 if hasattr(instance, 'agent') and instance.agent:
                     NotificationService.create_notification(
@@ -261,11 +284,8 @@ def handle_client_profile_update(sender, instance, created, **kwargs):
     
     try:
         if not created:
-            # Vérifier les changements importants
-            old_instance = sender.objects.get(id=instance.id)
-            
-            # Changement de statut (nouveau client, prospect, etc.)
-            if old_instance.status != instance.status:
+            old_status = getattr(instance, '_prev_status', None)
+            if old_status is not None and old_status != instance.status:
                 # Notifier l'agent assigné
                 if instance.assigned_agent:
                     NotificationService.create_notification(
@@ -321,11 +341,10 @@ def handle_user_profile_update(sender, instance, created, **kwargs):
     
     try:
         if not created:
-            # Vérifier les changements de rôle ou de permissions
-            old_instance = sender.objects.get(id=instance.id)
-            
-            # Changement de statut utilisateur (actif, inactif, etc.)
-            if old_instance.is_active != instance.is_active:
+            was_active = getattr(instance, '_prev_is_active', None)
+            if was_active is None and instance.pk:
+                was_active = sender.objects.filter(pk=instance.pk).values_list('is_active', flat=True).first()
+            if was_active is not None and was_active != instance.is_active:
                 if not instance.is_active:
                     # Utilisateur désactivé - notifier les admins
                     admin_users = User.objects.filter(is_superuser=True)

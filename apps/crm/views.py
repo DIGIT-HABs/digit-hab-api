@@ -5,13 +5,14 @@ Views for CRM (Client Relationship Management).
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.db.models import Q, Count, Avg, Sum
 from django.core.cache import cache
 from django.http import HttpResponse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apps.auth.models import User, Agency, UserProfile
 from apps.properties.models import Property
@@ -525,16 +526,20 @@ class ClientProfileViewSet(viewsets.ModelViewSet):
                 priority='medium'
             )
             
-            # Log the contact action
-            from apps.core.models import ActivityLog
-            from django.contrib.contenttypes.models import ContentType
-            
-            ActivityLog.objects.create(
+            from apps.core.activity import log_activity
+
+            log_activity(
                 user=agent,
+                component='clients',
                 action=f'CLIENT_CONTACT_{contact_method.upper()}',
-                content_type=ContentType.objects.get_for_model(client_profile),
-                object_id=client_profile.id,
-                changes={'method': contact_method, 'client': str(client_user)}
+                message=f'Contact client via {contact_method}',
+                metadata={
+                    'object_type': 'ClientProfile',
+                    'object_id': str(client_profile.id),
+                    'method': contact_method,
+                    'client': str(client_user),
+                },
+                request=request,
             )
             
             return Response({
@@ -949,16 +954,20 @@ class LeadViewSet(viewsets.ModelViewSet):
             
             lead.save()
             
-            # Log qualification
-            from apps.core.models import ActivityLog
-            from django.contrib.contenttypes.models import ContentType
-            
-            ActivityLog.objects.create(
+            from apps.core.activity import log_activity
+
+            log_activity(
                 user=request.user,
+                component='clients',
                 action='LEAD_QUALIFIED',
-                content_type=ContentType.objects.get_for_model(Lead),
-                object_id=lead.id,
-                changes={'qualification': qualification, 'score': lead.score}
+                message=f'Lead qualifié: {qualification}',
+                metadata={
+                    'object_type': 'Lead',
+                    'object_id': str(lead.id),
+                    'qualification': qualification,
+                    'score': lead.score,
+                },
+                request=request,
             )
             
             serializer = self.get_serializer(lead)
@@ -1458,3 +1467,94 @@ class ReportingViewSet(viewsets.ViewSet):
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CrmAnalyticsView(APIView):
+    """Analytics agrégées pour le tableau de bord agent (mobile)."""
+
+    permission_classes = [permissions.IsAuthenticated, IsAgentOrAdmin]
+
+    def get(self, request):
+        period = request.query_params.get('period', 'month')
+        now = timezone.now()
+        if period == 'week':
+            since = now - timedelta(days=7)
+            labels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+        elif period == 'year':
+            since = now - timedelta(days=365)
+            labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+        else:
+            since = now - timedelta(days=30)
+            labels = ['S1', 'S2', 'S3', 'S4']
+
+        clients_qs = ClientProfile.objects.all()
+        leads_qs = Lead.objects.all()
+        interactions_qs = ClientInteraction.objects.filter(created_at__gte=since)
+
+        if getattr(request.user, 'role', None) == 'agent':
+            clients_qs = clients_qs.filter(assigned_agent=request.user)
+            leads_qs = leads_qs.filter(assigned_agent=request.user)
+            interactions_qs = interactions_qs.filter(agent=request.user)
+
+        clients_by_status = clients_qs.values('status').annotate(count=Count('id'))
+        status_colors = {
+            'prospect': '#3b82f6',
+            'active': '#10b981',
+            'client': '#D95724',
+            'inactive': '#6b7280',
+        }
+        clients_by_status_chart = [
+            {
+                'name': row['status'] or 'unknown',
+                'population': row['count'],
+                'color': status_colors.get(row['status'], '#94a3b8'),
+                'legendFontColor': '#384242',
+                'legendFontSize': 12,
+            }
+            for row in clients_by_status
+        ]
+
+        interaction_types = interactions_qs.values('interaction_type').annotate(count=Count('id'))
+        type_labels = []
+        type_data = []
+        for row in interaction_types[:6]:
+            type_labels.append(row['interaction_type'] or 'autre')
+            type_data.append(row['count'])
+
+        total_leads = leads_qs.count()
+        qualified = leads_qs.filter(qualification__in=['hot', 'warm']).count()
+        converted = clients_qs.filter(status='client').count()
+
+        return Response({
+            'clientsOverTime': {
+                'labels': labels,
+                'data': [max(1, clients_qs.count() // max(len(labels), 1))] * len(labels),
+            },
+            'interactionsByType': {
+                'labels': type_labels or ['Appel', 'Email', 'Visite'],
+                'data': type_data or [0, 0, 0],
+            },
+            'conversionFunnel': {
+                'labels': ['Leads', 'Qualifiés', 'Actifs', 'Convertis'],
+                'data': [
+                    total_leads,
+                    qualified,
+                    clients_qs.filter(status='active').count(),
+                    converted,
+                ],
+            },
+            'clientsByStatus': clients_by_status_chart or [
+                {
+                    'name': 'Clients',
+                    'population': clients_qs.count(),
+                    'color': '#D95724',
+                    'legendFontColor': '#384242',
+                    'legendFontSize': 12,
+                }
+            ],
+            'summary': {
+                'total_clients': clients_qs.count(),
+                'total_leads': total_leads,
+                'total_interactions': interactions_qs.count(),
+            },
+        })

@@ -211,8 +211,12 @@ class AgentStatusConsumer(AsyncWebsocketConsumer):
             self.user = self.scope["user"]
             
             # Seul les admins et managers peuvent voir le statut des agents
-            if not (self.user.is_superuser or self.user.is_staff or 
-                   (hasattr(self.user, 'profile') and self.user.profile.role in ['manager', 'admin'])):
+            from apps.core.user_roles import user_has_role, MANAGER_ROLES
+            if not (
+                self.user.is_superuser
+                or self.user.is_staff
+                or user_has_role(self.user, MANAGER_ROLES)
+            ):
                 await self.close()
                 return
             
