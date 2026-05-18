@@ -1474,27 +1474,86 @@ class CrmAnalyticsView(APIView):
 
     permission_classes = [permissions.IsAuthenticated, IsAgentOrAdmin]
 
+    STATUS_LABELS = {
+        'prospect': 'Prospects',
+        'active': 'Actifs',
+        'client': 'Clients',
+        'inactive': 'Inactifs',
+    }
+
+    INTERACTION_LABELS = {
+        'call': 'Appel',
+        'email': 'Email',
+        'visit': 'Visite',
+        'meeting': 'Réunion',
+        'sms': 'SMS',
+        'whatsapp': 'WhatsApp',
+        'note': 'Note',
+    }
+
+    def _clients_over_time(self, clients_qs, period, since, labels):
+        data = []
+        now = timezone.now()
+        if period == 'week':
+            for i in range(len(labels)):
+                day = (now - timedelta(days=len(labels) - 1 - i)).date()
+                data.append(clients_qs.filter(created_at__date=day).count())
+        elif period == 'year':
+            ref = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            for i in range(len(labels)):
+                m = ref.month - (len(labels) - 1 - i)
+                y = ref.year
+                while m < 1:
+                    m += 12
+                    y -= 1
+                month_start = ref.replace(year=y, month=m, day=1)
+                if m == 12:
+                    month_end = month_start.replace(year=y + 1, month=1, day=1)
+                else:
+                    month_end = month_start.replace(month=m + 1, day=1)
+                data.append(
+                    clients_qs.filter(
+                        created_at__gte=month_start,
+                        created_at__lt=month_end,
+                    ).count()
+                )
+        else:
+            for i in range(len(labels)):
+                week_start = since + timedelta(days=7 * i)
+                week_end = week_start + timedelta(days=7)
+                data.append(
+                    clients_qs.filter(
+                        created_at__gte=week_start,
+                        created_at__lt=week_end,
+                    ).count()
+                )
+        return data
+
     def get(self, request):
         period = request.query_params.get('period', 'month')
         now = timezone.now()
         if period == 'week':
-            since = now - timedelta(days=7)
+            since = now - timedelta(days=6)
             labels = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
         elif period == 'year':
             since = now - timedelta(days=365)
             labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
         else:
-            since = now - timedelta(days=30)
+            since = now - timedelta(days=28)
             labels = ['S1', 'S2', 'S3', 'S4']
 
         clients_qs = ClientProfile.objects.all()
         leads_qs = Lead.objects.all()
         interactions_qs = ClientInteraction.objects.filter(created_at__gte=since)
+        reservations_qs = Reservation.objects.filter(created_at__gte=since)
 
-        if getattr(request.user, 'role', None) == 'agent':
-            clients_qs = clients_qs.filter(assigned_agent=request.user)
-            leads_qs = leads_qs.filter(assigned_agent=request.user)
-            interactions_qs = interactions_qs.filter(agent=request.user)
+        user = request.user
+        is_agent = getattr(user, 'role', None) == 'agent'
+        if is_agent:
+            clients_qs = clients_qs.filter(assigned_agent=user)
+            leads_qs = leads_qs.filter(assigned_agent=user)
+            interactions_qs = interactions_qs.filter(agent=user)
+            reservations_qs = reservations_qs.filter(assigned_agent=user)
 
         clients_by_status = clients_qs.values('status').annotate(count=Count('id'))
         status_colors = {
@@ -1505,56 +1564,88 @@ class CrmAnalyticsView(APIView):
         }
         clients_by_status_chart = [
             {
-                'name': row['status'] or 'unknown',
+                'name': self.STATUS_LABELS.get(row['status'], row['status'] or 'Autre'),
                 'population': row['count'],
                 'color': status_colors.get(row['status'], '#94a3b8'),
                 'legendFontColor': '#384242',
                 'legendFontSize': 12,
             }
             for row in clients_by_status
+            if row['count'] > 0
         ]
 
         interaction_types = interactions_qs.values('interaction_type').annotate(count=Count('id'))
         type_labels = []
         type_data = []
         for row in interaction_types[:6]:
-            type_labels.append(row['interaction_type'] or 'autre')
+            key = row['interaction_type'] or 'autre'
+            type_labels.append(self.INTERACTION_LABELS.get(key, key.capitalize()))
             type_data.append(row['count'])
 
         total_leads = leads_qs.count()
         qualified = leads_qs.filter(qualification__in=['hot', 'warm']).count()
         converted = clients_qs.filter(status='client').count()
+        active_clients = clients_qs.filter(status='active').count()
+        conversion_rate = round((converted / total_leads * 100), 1) if total_leads > 0 else 0.0
+
+        commissions_summary = {}
+        if is_agent:
+            try:
+                from apps.commissions.models import Commission
+                comm_qs = Commission.objects.filter(agent=user)
+                commissions_summary = {
+                    'total_amount': float(
+                        comm_qs.aggregate(t=Sum('commission_amount'))['t'] or 0
+                    ),
+                    'pending_amount': float(
+                        comm_qs.filter(status='pending').aggregate(t=Sum('commission_amount'))['t'] or 0
+                    ),
+                    'paid_amount': float(
+                        comm_qs.filter(status='paid').aggregate(t=Sum('commission_amount'))['t'] or 0
+                    ),
+                }
+            except Exception:
+                commissions_summary = {}
 
         return Response({
             'clientsOverTime': {
                 'labels': labels,
-                'data': [max(1, clients_qs.count() // max(len(labels), 1))] * len(labels),
+                'data': self._clients_over_time(clients_qs, period, since, labels),
             },
             'interactionsByType': {
-                'labels': type_labels or ['Appel', 'Email', 'Visite'],
-                'data': type_data or [0, 0, 0],
+                'labels': type_labels or ['—'],
+                'data': type_data or [0],
             },
             'conversionFunnel': {
                 'labels': ['Leads', 'Qualifiés', 'Actifs', 'Convertis'],
                 'data': [
                     total_leads,
                     qualified,
-                    clients_qs.filter(status='active').count(),
+                    active_clients,
                     converted,
                 ],
             },
             'clientsByStatus': clients_by_status_chart or [
                 {
-                    'name': 'Clients',
-                    'population': clients_qs.count(),
-                    'color': '#D95724',
+                    'name': 'Aucun client',
+                    'population': 1,
+                    'color': '#e5e7eb',
                     'legendFontColor': '#384242',
                     'legendFontSize': 12,
                 }
             ],
             'summary': {
                 'total_clients': clients_qs.count(),
+                'active_clients': active_clients,
                 'total_leads': total_leads,
                 'total_interactions': interactions_qs.count(),
+                'conversion_rate': conversion_rate,
+                'reservations': {
+                    'total': reservations_qs.count(),
+                    'completed': reservations_qs.filter(status='completed').count(),
+                    'pending': reservations_qs.filter(status='pending').count(),
+                    'confirmed': reservations_qs.filter(status='confirmed').count(),
+                },
+                'commissions': commissions_summary,
             },
         })
