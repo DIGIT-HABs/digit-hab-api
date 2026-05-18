@@ -1491,6 +1491,19 @@ class CrmAnalyticsView(APIView):
         'note': 'Note',
     }
 
+    def _clients_for_agent(self, user):
+        """ClientProfile n'a pas assigned_agent : clients liés via interactions ou réservations."""
+        interaction_user_ids = ClientInteraction.objects.filter(
+            agent=user
+        ).values_list('client_id', flat=True)
+        reservation_profile_ids = Reservation.objects.filter(
+            assigned_agent=user,
+            client_profile_id__isnull=False,
+        ).values_list('client_profile_id', flat=True)
+        return ClientProfile.objects.filter(
+            Q(user_id__in=interaction_user_ids) | Q(id__in=reservation_profile_ids)
+        ).distinct()
+
     def _clients_over_time(self, clients_qs, period, since, labels):
         data = []
         now = timezone.now()
@@ -1530,6 +1543,17 @@ class CrmAnalyticsView(APIView):
         return data
 
     def get(self, request):
+        try:
+            return self._build_analytics_response(request)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception('Erreur CRM analytics')
+            return Response(
+                {'error': 'Impossible de charger les analytics.', 'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def _build_analytics_response(self, request):
         period = request.query_params.get('period', 'month')
         now = timezone.now()
         if period == 'week':
@@ -1548,9 +1572,10 @@ class CrmAnalyticsView(APIView):
         reservations_qs = Reservation.objects.filter(created_at__gte=since)
 
         user = request.user
-        is_agent = getattr(user, 'role', None) == 'agent'
+        role = getattr(user, 'role', None)
+        is_agent = role == 'agent'
         if is_agent:
-            clients_qs = clients_qs.filter(assigned_agent=user)
+            clients_qs = self._clients_for_agent(user)
             leads_qs = leads_qs.filter(assigned_agent=user)
             interactions_qs = interactions_qs.filter(agent=user)
             reservations_qs = reservations_qs.filter(assigned_agent=user)
