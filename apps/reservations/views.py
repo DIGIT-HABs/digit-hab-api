@@ -2,6 +2,8 @@
 Views for reservations management API.
 """
 
+import logging
+
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -31,6 +33,8 @@ from .permissions import (
 )
 from .services import PaymentService, NotificationService
 from .contract_pdf import save_contract_pdf_to_field
+
+logger = logging.getLogger(__name__)
 
 
 class ReservationViewSet(viewsets.ModelViewSet):
@@ -260,14 +264,25 @@ class ReservationViewSet(viewsets.ModelViewSet):
         
         with transaction.atomic():
             reservation.complete(notes=notes)
-            
-            # Log activity
+
             ReservationActivity.objects.create(
                 reservation=reservation,
                 activity_type='completed',
                 description=f"Réservation marquée comme terminée par {request.user.get_full_name()}",
                 performed_by=request.user
             )
+
+            try:
+                from apps.commissions.services import create_commission_for_reservation
+                create_commission_for_reservation(
+                    reservation,
+                    source='reservation_completed',
+                )
+            except Exception:
+                logger.exception(
+                    'Échec création commission pour réservation %s',
+                    reservation.pk,
+                )
         
         serializer = self.get_serializer(reservation)
         return Response(serializer.data)
@@ -747,46 +762,18 @@ class ContractViewSet(viewsets.ModelViewSet):
                 prop.status = 'rented'
             prop.save(update_fields=['status'])
 
-            # Créer automatiquement la commission liée à la transaction signée
-            # (si un agent est assigné et qu'aucune commission n'existe déjà).
             try:
-                from decimal import Decimal
-                from apps.commissions.models import Commission
-
-                if res.assigned_agent and res.property and res.property.agency:
-                    already_exists = Commission.objects.filter(
-                        reservation=res,
-                        agent=res.assigned_agent
-                    ).exists()
-                    if not already_exists:
-                        # Base: achat -> purchase_price/amount ; location -> amount calculé (par nuit)
-                        base_amount = res.purchase_price or res.amount or Decimal('0')
-                        commission_type = 'sale' if contract.contract_type == 'sale' else 'rental'
-                        agency_rate = Decimal('3.00')
-                        raw_rate = (res.property.agency.settings or {}).get('commission_rate')
-                        if raw_rate is not None:
-                            try:
-                                agency_rate = Decimal(str(raw_rate))
-                            except Exception:
-                                agency_rate = Decimal('3.00')
-
-                        # Taux configurable par agence via agency.settings['commission_rate'].
-                        Commission.objects.create(
-                            agent=res.assigned_agent,
-                            agency=res.property.agency,
-                            property=res.property,
-                            reservation=res,
-                            commission_type=commission_type,
-                            base_amount=base_amount,
-                            commission_rate=agency_rate,
-                            commission_amount=Decimal('0.00'),
-                            status='pending',
-                            transaction_date=timezone.now(),
-                            notes=f"Commission auto générée à la signature du contrat ({contract.contract_type}).",
-                        )
+                from apps.commissions.services import create_commission_for_reservation
+                create_commission_for_reservation(
+                    res,
+                    source=f'contract_signed_{contract.contract_type}',
+                    contract_type=contract.contract_type,
+                )
             except Exception:
-                # Ne pas bloquer la signature du contrat si la commission échoue.
-                pass
+                logger.exception(
+                    'Échec création commission à la signature du contrat %s',
+                    contract.pk,
+                )
 
             NotificationService.send_in_app_contract_signed(contract)
         return Response(ContractSerializer(contract).data, status=status.HTTP_200_OK)

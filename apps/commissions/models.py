@@ -75,9 +75,15 @@ class Commission(models.Model):
         return f"Commission {self.commission_amount} - {self.agent.get_full_name()} ({self.get_status_display()})"
     
     def save(self, *args, **kwargs):
-        """Calculate commission amount if not set."""
-        if not self.commission_amount and self.base_amount and self.commission_rate:
-            self.commission_amount = (self.base_amount * self.commission_rate) / Decimal('100')
+        """Calculate commission amount if not set or zero."""
+        if (
+            (self.commission_amount is None or self.commission_amount == 0)
+            and self.base_amount
+            and self.commission_rate
+        ):
+            self.commission_amount = (
+                self.base_amount * self.commission_rate
+            ) / Decimal('100')
         super().save(*args, **kwargs)
     
     def approve(self, approved_by=None):
