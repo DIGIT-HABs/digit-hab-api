@@ -32,6 +32,13 @@ from .matching import PropertyMatcher, LeadMatcher, auto_match_properties_for_cl
 from apps.reservations.models import Reservation
 from apps.reservations.serializers import ReservationSerializer
 from .services import ReportingService
+from .services.scope import (
+    client_profiles_for_user,
+    leads_for_user,
+    reservations_for_user,
+    interactions_for_clients,
+    user_agency,
+)
 
 
 class ClientProfileViewSet(viewsets.ModelViewSet):
@@ -54,30 +61,7 @@ class ClientProfileViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filter queryset based on user role and permissions."""
-        user = self.request.user
-        queryset = super().get_queryset()
-        
-        if user.role == 'admin':
-            # Admin can see all client profiles
-            queryset = queryset
-        elif user.role == 'agent':
-            # Agent can see:
-            # 1) clients whose user profile is already attached to their agency
-            # 2) clients linked to reservations on properties of their agency
-            #    (even if the client user profile stays in the DEFAULT-CLIENTS agency)
-            reservation_client_ids = Reservation.objects.filter(
-                client_profile__isnull=False,
-                property__agency=user.agency,
-            ).values_list('client_profile_id', flat=True).distinct()
-
-            queryset = queryset.filter(
-                Q(user__profile__agency=user.agency) | Q(id__in=reservation_client_ids)
-            )
-        elif user.role == 'client':
-            # Client can only see their own profile
-            return queryset.filter(user=user)
-        else:
-            return queryset.none()
+        queryset = client_profiles_for_user(self.request.user)
 
         # Quick filters for list (agent dashboard)
         if self.action == 'list':
@@ -782,22 +766,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filter queryset based on user role and permissions."""
-        user = self.request.user
-        queryset = super().get_queryset()
-        
-        if user.role == 'admin':
-            # Admin can see all leads
-            return queryset
-        elif user.role == 'agent':
-            # Agent can see leads for their agency
-            agency = user.agency
-            if agency:
-                return queryset.filter(agency=agency)
-            else:
-                # Agent without agency sees no leads
-                return queryset.none()
-        
-        return queryset.none()
+        return leads_for_user(self.request.user)
     
     def get_permissions(self):
         """Get permissions for different actions."""
@@ -1479,6 +1448,7 @@ class CrmAnalyticsView(APIView):
         'active': 'Actifs',
         'client': 'Clients',
         'inactive': 'Inactifs',
+        'archived': 'Archivés',
     }
 
     INTERACTION_LABELS = {
@@ -1490,19 +1460,6 @@ class CrmAnalyticsView(APIView):
         'whatsapp': 'WhatsApp',
         'note': 'Note',
     }
-
-    def _clients_for_agent(self, user):
-        """ClientProfile n'a pas assigned_agent : clients liés via interactions ou réservations."""
-        interaction_user_ids = ClientInteraction.objects.filter(
-            agent=user
-        ).values_list('client_id', flat=True)
-        reservation_profile_ids = Reservation.objects.filter(
-            assigned_agent=user,
-            client_profile_id__isnull=False,
-        ).values_list('client_profile_id', flat=True)
-        return ClientProfile.objects.filter(
-            Q(user_id__in=interaction_user_ids) | Q(id__in=reservation_profile_ids)
-        ).distinct()
 
     def _clients_over_time(self, clients_qs, period, since, labels):
         data = []
@@ -1566,19 +1523,14 @@ class CrmAnalyticsView(APIView):
             since = now - timedelta(days=28)
             labels = ['S1', 'S2', 'S3', 'S4']
 
-        clients_qs = ClientProfile.objects.all()
-        leads_qs = Lead.objects.all()
-        interactions_qs = ClientInteraction.objects.filter(created_at__gte=since)
-        reservations_qs = Reservation.objects.filter(created_at__gte=since)
-
         user = request.user
         role = getattr(user, 'role', None)
         is_agent = role == 'agent'
-        if is_agent:
-            clients_qs = self._clients_for_agent(user)
-            leads_qs = leads_qs.filter(assigned_agent=user)
-            interactions_qs = interactions_qs.filter(agent=user)
-            reservations_qs = reservations_qs.filter(assigned_agent=user)
+
+        clients_qs = client_profiles_for_user(user)
+        leads_qs = leads_for_user(user)
+        interactions_qs = interactions_for_clients(clients_qs, since=since)
+        reservations_qs = reservations_for_user(user).filter(created_at__gte=since)
 
         clients_by_status = clients_qs.values('status').annotate(count=Count('id'))
         status_colors = {
@@ -1586,6 +1538,7 @@ class CrmAnalyticsView(APIView):
             'active': '#10b981',
             'client': '#D95724',
             'inactive': '#6b7280',
+            'archived': '#94a3b8',
         }
         clients_by_status_chart = [
             {
@@ -1614,23 +1567,28 @@ class CrmAnalyticsView(APIView):
         conversion_rate = round((converted / total_leads * 100), 1) if total_leads > 0 else 0.0
 
         commissions_summary = {}
-        if is_agent:
-            try:
-                from apps.commissions.models import Commission
-                comm_qs = Commission.objects.filter(agent=user)
-                commissions_summary = {
-                    'total_amount': float(
-                        comm_qs.aggregate(t=Sum('commission_amount'))['t'] or 0
-                    ),
-                    'pending_amount': float(
-                        comm_qs.filter(status='pending').aggregate(t=Sum('commission_amount'))['t'] or 0
-                    ),
-                    'paid_amount': float(
-                        comm_qs.filter(status='paid').aggregate(t=Sum('commission_amount'))['t'] or 0
-                    ),
-                }
-            except Exception:
-                commissions_summary = {}
+        try:
+            from apps.commissions.models import Commission
+            comm_qs = Commission.objects.filter(transaction_date__gte=since)
+            if is_agent:
+                comm_qs = comm_qs.filter(agent=user)
+            elif role == 'admin' or getattr(user, 'is_staff', False):
+                agency = user_agency(user)
+                if agency:
+                    comm_qs = comm_qs.filter(agency=agency)
+            commissions_summary = {
+                'total_amount': float(
+                    comm_qs.aggregate(t=Sum('commission_amount'))['t'] or 0
+                ),
+                'pending_amount': float(
+                    comm_qs.filter(status='pending').aggregate(t=Sum('commission_amount'))['t'] or 0
+                ),
+                'paid_amount': float(
+                    comm_qs.filter(status='paid').aggregate(t=Sum('commission_amount'))['t'] or 0
+                ),
+            }
+        except Exception:
+            commissions_summary = {}
 
         return Response({
             'clientsOverTime': {
