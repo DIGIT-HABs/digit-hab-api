@@ -1302,8 +1302,13 @@ class ReportingViewSet(viewsets.ViewSet):
         include_interactions = request.query_params.get('include_interactions', 'true').lower() == 'true'
         include_notes = request.query_params.get('include_notes', 'true').lower() == 'true'
         
+        if not client_profiles_for_user(request.user).filter(id=client_id).exists():
+            return Response(
+                {'error': 'Client introuvable ou accès refusé.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        
         try:
-            # Generate PDF
             pdf_buffer = ReportingService.generate_client_report_pdf(
                 client_id=client_id,
                 include_interactions=include_interactions,
@@ -1350,10 +1355,18 @@ class ReportingViewSet(viewsets.ViewSet):
         
         if end_date_str:
             try:
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(
+                    hour=23, minute=59, second=59
+                )
             except ValueError:
                 return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
                               status=status.HTTP_400_BAD_REQUEST)
+        
+        if getattr(request.user, 'role', None) == 'agent' and str(request.user.id) != str(agent_id):
+            return Response(
+                {'error': 'Vous ne pouvez exporter que votre propre rapport.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         
         try:
             # Generate Excel
@@ -1406,10 +1419,21 @@ class ReportingViewSet(viewsets.ViewSet):
         
         if end_date_str:
             try:
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(
+                    hour=23, minute=59, second=59
+                )
             except ValueError:
                 return Response({'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
                               status=status.HTTP_400_BAD_REQUEST)
+        
+        user_agency_id = getattr(
+            getattr(request.user, 'profile', None), 'agency_id', None
+        )
+        if getattr(request.user, 'role', None) == 'agent' and str(user_agency_id) != str(agency_id):
+            return Response(
+                {'error': "Accès refusé à cette agence."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         
         try:
             # Generate Excel

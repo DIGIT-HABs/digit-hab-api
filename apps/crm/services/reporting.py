@@ -19,8 +19,16 @@ from openpyxl.chart import BarChart, Reference, PieChart
 from openpyxl.utils import get_column_letter
 
 from apps.crm.models import ClientProfile, ClientInteraction, PropertyInterest, Lead, ClientNote
+from apps.crm.services.scope import client_profiles_for_user, reservations_for_user
+from apps.auth.models import Agency
 
 User = get_user_model()
+
+
+def _end_of_day(dt):
+    if dt and getattr(dt, 'hour', 0) == 0 and getattr(dt, 'minute', 0) == 0:
+        return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
 
 
 class ReportingService:
@@ -253,6 +261,7 @@ class ReportingService:
             start_date = datetime.now() - timedelta(days=30)
         if not end_date:
             end_date = datetime.now()
+        end_date = _end_of_day(end_date)
         
         # Get agent
         try:
@@ -285,22 +294,25 @@ class ReportingService:
         ws_summary.merge_cells('A1:D1')
         ws_summary.merge_cells('A2:D2')
         
-        # Get metrics
         interactions = ClientInteraction.objects.filter(
             agent=agent,
-            scheduled_date__gte=start_date,
-            scheduled_date__lte=end_date
+            created_at__gte=start_date,
+            created_at__lte=end_date,
         )
         
         total_interactions = interactions.count()
         completed_interactions = interactions.filter(status='completed').count()
         
-        # Clients managed
-        clients_managed = ClientProfile.objects.filter(
-            user__client_interactions__agent=agent,
-            user__client_interactions__scheduled_date__gte=start_date,
-            user__client_interactions__scheduled_date__lte=end_date
-        ).distinct().count()
+        clients_managed = client_profiles_for_user(agent).count()
+        new_clients = client_profiles_for_user(agent).filter(
+            created_at__gte=start_date,
+            created_at__lte=end_date,
+        ).count()
+        reservations_completed = reservations_for_user(agent).filter(
+            status='completed',
+            completed_at__gte=start_date,
+            completed_at__lte=end_date,
+        ).count()
         
         # Leads
         leads_assigned = Lead.objects.filter(
@@ -316,12 +328,21 @@ class ReportingService:
             conversion_date__lte=end_date
         ).count()
         
-        # Property interests generated
         property_interests = PropertyInterest.objects.filter(
-            client__client_interactions__agent=agent,
+            client__interactions__agent=agent,
             interaction_date__gte=start_date,
-            interaction_date__lte=end_date
+            interaction_date__lte=end_date,
         ).distinct().count()
+        
+        try:
+            from apps.commissions.models import Commission
+            commission_total = Commission.objects.filter(
+                agent=agent,
+                transaction_date__gte=start_date,
+                transaction_date__lte=end_date,
+            ).aggregate(total=Sum('commission_amount'))['total'] or 0
+        except Exception:
+            commission_total = 0
         
         # Metrics table
         ws_summary['A4'] = "Métrique"
@@ -335,11 +356,14 @@ class ReportingService:
             ("Interactions totales", total_interactions),
             ("Interactions complétées", completed_interactions),
             ("Taux de complétion", f"{(completed_interactions/total_interactions*100):.1f}%" if total_interactions > 0 else "0%"),
-            ("Clients gérés", clients_managed),
+            ("Clients (périmètre agence)", clients_managed),
+            ("Nouveaux clients (période)", new_clients),
+            ("Réservations terminées", reservations_completed),
+            ("Commissions (FCFA)", float(commission_total)),
             ("Leads assignés", leads_assigned),
             ("Leads convertis", leads_converted),
-            ("Taux de conversion", f"{(leads_converted/leads_assigned*100):.1f}%" if leads_assigned > 0 else "0%"),
-            ("Intérêts propriétés générés", property_interests),
+            ("Taux de conversion leads", f"{(leads_converted/leads_assigned*100):.1f}%" if leads_assigned > 0 else "0%"),
+            ("Intérêts propriétés", property_interests),
         ]
         
         row = 5
@@ -366,7 +390,8 @@ class ReportingService:
         
         row = 2
         for interaction in interactions:
-            ws_interactions.cell(row=row, column=1, value=interaction.scheduled_date.strftime('%d/%m/%Y') if interaction.scheduled_date else 'N/A')
+            date_val = interaction.scheduled_date or interaction.created_at
+            ws_interactions.cell(row=row, column=1, value=date_val.strftime('%d/%m/%Y') if date_val else 'N/A')
             ws_interactions.cell(row=row, column=2, value=interaction.client.get_full_name())
             ws_interactions.cell(row=row, column=3, value=interaction.get_interaction_type_display())
             ws_interactions.cell(row=row, column=4, value=interaction.get_channel_display())
@@ -442,30 +467,26 @@ class ReportingService:
             start_date = datetime.now() - timedelta(days=30)
         if not end_date:
             end_date = datetime.now()
+        end_date = _end_of_day(end_date)
         
-        # Create workbook
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Vue d'ensemble Agence"
-        
-        # Style definitions
-        header_fill = PatternFill(start_color="2C5282", end_color="2C5282", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True, size=12)
-        title_font = Font(bold=True, size=14, color="1A365D")
-        
-        # Title
-        ws['A1'] = "Rapport d'Agence"
-        ws['A1'].font = title_font
-        ws['A2'] = f"Période: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"
-        ws.merge_cells('A1:E1')
-        ws.merge_cells('A2:E2')
-        
-        # Get agents in agency
-        from apps.custom_auth.models import Agency
         try:
             agency = Agency.objects.get(id=agency_id)
         except Agency.DoesNotExist:
             return io.BytesIO()
+        
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Vue d'ensemble Agence"
+        
+        header_fill = PatternFill(start_color="2C5282", end_color="2C5282", fill_type="solid")
+        header_font = Font(color="FFFFFF", bold=True, size=12)
+        title_font = Font(bold=True, size=14, color="1A365D")
+        
+        ws['A1'] = f"Rapport d'Agence — {agency.name}"
+        ws['A1'].font = title_font
+        ws['A2'] = f"Période: {start_date.strftime('%d/%m/%Y')} - {end_date.strftime('%d/%m/%Y')}"
+        ws.merge_cells('A1:E1')
+        ws.merge_cells('A2:E2')
         
         agents = User.objects.filter(profile__agency=agency, role='agent')
         
@@ -484,15 +505,11 @@ class ReportingService:
         for agent in agents:
             interactions_count = ClientInteraction.objects.filter(
                 agent=agent,
-                scheduled_date__gte=start_date,
-                scheduled_date__lte=end_date
+                created_at__gte=start_date,
+                created_at__lte=end_date,
             ).count()
             
-            clients_count = ClientProfile.objects.filter(
-                user__client_interactions__agent=agent,
-                user__client_interactions__scheduled_date__gte=start_date,
-                user__client_interactions__scheduled_date__lte=end_date
-            ).distinct().count()
+            clients_count = client_profiles_for_user(agent).count()
             
             leads_assigned = Lead.objects.filter(
                 assigned_agent=agent,
