@@ -11,10 +11,38 @@ Avec arguments :
   python manage.py create_admin --email admin@digit-hab.sn --username admin --password "MotDePasse123!"
 """
 
+from contextlib import contextmanager
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.db.models.signals import post_save
+
+
+@contextmanager
+def _mute_user_save_notifications(User):
+    """Évite les notifications WebSocket/Redis lors d'une commande CLI."""
+    disconnected = []
+    try:
+        from apps.notifications.signals import (
+            handle_user_registration,
+            handle_user_profile_update,
+        )
+        for receiver, sender in (
+            (handle_user_registration, User),
+            (handle_user_profile_update, User),
+        ):
+            post_save.disconnect(receiver, sender=sender)
+            disconnected.append((receiver, sender))
+    except ImportError:
+        pass
+
+    try:
+        yield
+    finally:
+        for receiver, sender in disconnected:
+            post_save.connect(receiver, sender=sender)
 
 
 class Command(BaseCommand):
@@ -77,34 +105,40 @@ class Command(BaseCommand):
                 'Utilisez --update pour le promouvoir en admin.'
             )
 
-        if existing:
-            existing.username = existing.username or username
-            existing.role = 'admin'
-            existing.is_staff = True
-            existing.is_superuser = True
-            existing.is_active = True
-            if first_name:
-                existing.first_name = first_name
-            if last_name:
-                existing.last_name = last_name
-            existing.set_password(password)
-            existing.save()
-            user = existing
-            action = 'mis à jour'
-        else:
-            user = User.objects.create(
-                username=username,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                role='admin',
-                is_staff=True,
-                is_superuser=True,
-                is_active=True,
-            )
-            user.set_password(password)
-            user.save()
-            action = 'créé'
+        with _mute_user_save_notifications(User):
+            if existing:
+                existing.username = existing.username or username
+                existing.role = 'admin'
+                existing.is_staff = True
+                existing.is_superuser = True
+                existing.is_active = True
+                if first_name:
+                    existing.first_name = first_name
+                if last_name:
+                    existing.last_name = last_name
+                existing.set_password(password)
+                existing.save()
+                user = existing
+                action = 'mis à jour'
+            else:
+                user = User.objects.create(
+                    username=username,
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    role='admin',
+                    is_staff=True,
+                    is_superuser=True,
+                    is_active=True,
+                )
+                user.set_password(password)
+                user.save()
+                action = 'créé'
+
+        from django.conf import settings
+
+        db = settings.DATABASES.get('default', {})
+        db_label = f"{db.get('ENGINE', '?')} — {db.get('HOST', '?')}/{db.get('NAME', '?')}"
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -112,6 +146,18 @@ class Command(BaseCommand):
                 f'({user.email}) — role={user.role}'
             )
         )
+        self.stdout.write(f'Base de données : {db_label}')
+        self.stdout.write(
+            'Connexion app : POST /api/auth/login/ avec email + mot de passe (sensible à la casse).'
+        )
+        if not options.get('password') and no_input:
+            pass
+        elif options.get('password'):
+            self.stdout.write(
+                self.style.WARNING(
+                    'Vérifiez le mot de passe exact (caractères spéciaux inclus, ex. ! à la fin).'
+                )
+            )
 
     def _prompt_password(self) -> str:
         import getpass
