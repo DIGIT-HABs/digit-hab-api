@@ -4,8 +4,13 @@ Créer un utilisateur administrateur (role=admin, accès API + Django admin).
 Usage local :
   python manage.py create_admin
 
-Usage VPS / Docker :
-  docker compose -f docker-compose.prod.yml exec web python manage.py create_admin
+Usage VPS (systemd + PostgreSQL — même base que digit-hab-api.service) :
+  cd /opt/apps/digit-hab-api
+  set -a && source .env && set +a
+  ./venv/bin/python manage.py create_admin --email adm@gmail.com --password "..." --no-input
+
+Usage VPS (Docker uniquement si vous utilisez docker-compose) :
+  docker-compose -f docker-compose.prod.yml exec web python manage.py create_admin
 
 Avec arguments :
   python manage.py create_admin --email admin@digit-hab.sn --username admin --password "MotDePasse123!"
@@ -78,30 +83,35 @@ class Command(BaseCommand):
         from django.conf import settings
         import os
 
+        settings_module = os.environ.get(
+            'DJANGO_SETTINGS_MODULE',
+            'digit_hab_crm.settings.dev',
+        )
         engine = settings.DATABASES.get('default', {}).get('ENGINE', '')
+
         if 'sqlite' not in engine:
             return
 
         self.stdout.write('')
         self.stdout.write(
             self.style.ERROR(
-                'ATTENTION : vous utilisez SQLite (base de DEV locale).'
+                f'ATTENTION : SQLite (DEV) — settings={settings_module}'
             )
         )
         self.stdout.write(
             self.style.ERROR(
-                "L'API en production (Docker) utilise PostgreSQL — "
-                'cet admin ne pourra PAS se connecter à l\'app mobile/API prod.'
+                "L'API systemd (digit-hab-api.service) utilise PostgreSQL via .env — "
+                'cet admin ne pourra PAS se connecter à l\'app.'
             )
         )
-        if os.path.exists('docker-compose.prod.yml') or '/opt/apps/' in os.getcwd():
-            self.stdout.write(
-                self.style.WARNING(
-                    'Sur ce VPS, lancez plutôt :\n'
-                    '  docker compose -f docker-compose.prod.yml exec web '
-                    'python manage.py create_admin --email ... --password "..." --no-input'
-                )
+        self.stdout.write(
+            self.style.WARNING(
+                'Relancez avec les variables prod (même base que Gunicorn) :\n'
+                '  cd /opt/apps/digit-hab-api\n'
+                '  set -a && source .env && set +a\n'
+                '  ./venv/bin/python manage.py create_admin --email ... --password "..." --no-input'
             )
+        )
         self.stdout.write('')
 
     def handle(self, *args, **options):
