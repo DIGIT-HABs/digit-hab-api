@@ -375,6 +375,7 @@ class Payment(models.Model):
             ('USD', 'Dollar US (USD)'),
             ('GBP', 'Livre Sterling (GBP)'),
             ('CHF', 'Franc Suisse (CHF)'),
+            ('XOF', 'Franc CFA (XOF)'),
         ]
     )
     

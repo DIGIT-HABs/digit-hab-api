@@ -13,6 +13,7 @@ from django.db import transaction, models
 from django.db.models import Q, Count, Sum, Avg
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from decimal import Decimal, InvalidOperation
 from apps.auth.models import User
 from apps.properties.models import Property
 from apps.crm.models import ClientProfile
@@ -286,6 +287,78 @@ class ReservationViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(reservation)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], permission_classes=[CanProcessPayments])
+    def mark_paid(self, request, pk=None):
+        """Enregistrer un paiement manuel (espèces, virement…) par un agent."""
+        reservation = self.get_object()
+
+        if reservation.payment_status == 'paid':
+            return Response(
+                {'detail': 'Cette réservation est déjà marquée comme payée.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_amount = request.data.get('amount')
+        if raw_amount is not None:
+            try:
+                amount = Decimal(str(raw_amount))
+            except (InvalidOperation, TypeError, ValueError):
+                return Response(
+                    {'amount': 'Montant invalide.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            amount = Decimal(str(reservation.get_outstanding_amount() or reservation.amount or 0))
+
+        if amount <= 0:
+            return Response(
+                {'amount': 'Indiquez un montant positif à enregistrer.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payment_method = request.data.get('payment_method', 'cash')
+        allowed_methods = {'cash', 'bank_transfer', 'check', 'card'}
+        if payment_method not in allowed_methods:
+            return Response(
+                {'payment_method': f'Méthode non supportée. Valeurs: {", ".join(sorted(allowed_methods))}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        notes = (request.data.get('notes') or '').strip()
+        currency = reservation.currency or 'XOF'
+
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                reservation=reservation,
+                amount=amount,
+                currency=currency if currency in dict(Payment._meta.get_field('currency').choices) else 'EUR',
+                payment_method=payment_method,
+                status='completed',
+                billing_name=reservation.get_client_name(),
+                billing_email=reservation.get_client_email() or '',
+                billing_phone=reservation.get_client_phone() or '',
+                description=notes or 'Paiement enregistré manuellement par l\'agent',
+                completed_at=timezone.now(),
+            )
+            reservation.payment_status = 'paid'
+            reservation.save(update_fields=['payment_status', 'updated_at'])
+
+            ReservationActivity.objects.create(
+                reservation=reservation,
+                activity_type='payment_completed',
+                description=(
+                    f"Paiement de {amount} {currency} enregistré "
+                    f"({payment.get_payment_method_display()}) par {request.user.get_full_name()}"
+                ),
+                performed_by=request.user,
+            )
+
+        serializer = self.get_serializer(reservation)
+        return Response({
+            'reservation': serializer.data,
+            'payment': PaymentSerializer(payment).data,
+        })
     
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
     def activities(self, request, pk=None):

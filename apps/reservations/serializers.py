@@ -279,6 +279,21 @@ class ReservationSerializer(serializers.ModelSerializer):
                 data['assigned_agent'] = request.user
             if not data.get('created_by'):
                 data['created_by'] = request.user
+
+        # Agent crée pour un client sans compte : infos contact requises
+        if request and getattr(request.user, 'role', None) in ('agent', 'manager', 'admin'):
+            if not data.get('client_profile_id'):
+                name = (data.get('client_name') or '').strip()
+                email = (data.get('client_email') or '').strip()
+                phone = (data.get('client_phone') or '').strip()
+                if not name:
+                    raise serializers.ValidationError({
+                        'client_name': "Indiquez le nom du client.",
+                    })
+                if not email and not phone:
+                    raise serializers.ValidationError({
+                        'client_email': "Indiquez au moins un email ou un numéro de téléphone.",
+                    })
         
         return data
 

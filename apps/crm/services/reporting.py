@@ -98,7 +98,7 @@ class ReportingService:
             ['Téléphone:', getattr(user, 'phone', 'N/A')],
             ['Statut:', client_profile.get_status_display()],
             ['Niveau de priorité:', client_profile.get_priority_level_display()],
-            ['Budget:', f"{client_profile.min_budget or 0}€ - {client_profile.max_budget or 'N/A'}€"],
+            ['Budget:', f"{client_profile.min_budget or 0} - {client_profile.max_budget or 'N/A'} FCFA"],
             ['Score de conversion:', f"{client_profile.conversion_score:.1f}%"],
             ['Date d\'inscription:', client_profile.created_at.strftime('%d/%m/%Y')],
         ]
