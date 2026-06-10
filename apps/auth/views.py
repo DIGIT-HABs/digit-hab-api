@@ -260,6 +260,31 @@ class AgencyViewSet(ReadOnlyModelViewSet):
         serializer = UserSerializer(agent, context={'request': request})
         return Response(serializer.data)
 
+    @action(detail=True, methods=['patch'])
+    def update_settings(self, request, pk=None):
+        """Mise à jour agence (admin)."""
+        actor = request.user
+        if not (
+            actor.is_staff
+            or actor.is_superuser
+            or getattr(actor, 'role', None) == 'admin'
+        ):
+            return Response(
+                {'detail': 'Seuls les administrateurs peuvent modifier une agence.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        agency = self.get_object()
+        serializer = AgencyUpdateSerializer(
+            agency,
+            data=request.data,
+            partial=True,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        out = AgencySerializer(agency, context={'request': request})
+        return Response(out.data)
+
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
         """Get agency statistics."""
