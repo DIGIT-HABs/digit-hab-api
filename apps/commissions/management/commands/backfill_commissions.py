@@ -4,13 +4,14 @@ Usage: python manage.py backfill_commissions [--dry-run]
 """
 
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 
 from apps.reservations.models import Reservation
 from apps.commissions.services import create_commission_for_reservation
 
 
 class Command(BaseCommand):
-    help = 'Génère les commissions pour les réservations au statut completed sans commission.'
+    help = 'Génère les commissions pour réservations terminées ou payées sans commission.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -21,9 +22,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
-        qs = Reservation.objects.filter(status='completed').select_related(
+        qs = Reservation.objects.filter(
+            Q(status='completed') | Q(payment_status='paid')
+        ).select_related(
             'assigned_agent', 'property', 'property__agency'
-        )
+        ).distinct()
         created = 0
         skipped = 0
 

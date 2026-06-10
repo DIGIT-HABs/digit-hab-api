@@ -45,23 +45,9 @@ class CommissionViewSet(viewsets.ModelViewSet):
             # Admin can see all commissions
             return queryset
         elif user.role == 'agent':
-            
-            agency = None
-            if hasattr(user, 'profile') and user.profile.agency:
-                agency = user.profile.agency
-            elif hasattr(user, 'agency') and user.agency:
-                agency = user.agency
-            
-            if agency:
-                # Agent can see all commissions from their agency
-                return queryset.filter(agency=agency)
-            else:
-                # If no agency, only see their own commissions
-                return queryset.filter(agent=user)
-            # Agent can see their own commissions
-            # return queryset.filter(agency=user)
-        
-        
+            # « Mes commissions » : uniquement celles de l'agent connecté
+            return queryset.filter(agent=user)
+
         return queryset.none()
     
     def perform_create(self, serializer):

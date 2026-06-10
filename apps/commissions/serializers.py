@@ -19,21 +19,31 @@ class CommissionSerializer(serializers.ModelSerializer):
     agency_id = serializers.UUIDField(write_only=True)
     property = serializers.StringRelatedField(read_only=True)
     property_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    property_title = serializers.SerializerMethodField()
     reservation = serializers.StringRelatedField(read_only=True)
     reservation_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
-    
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    commission_type_display = serializers.CharField(source='get_commission_type_display', read_only=True)
+
+    def get_property_title(self, obj):
+        if obj.property_id and obj.property:
+            return obj.property.title
+        return None
+
     class Meta:
         model = Commission
         fields = [
             'id', 'agent', 'agent_id', 'agency', 'agency_id',
-            'property', 'property_id', 'reservation', 'reservation_id',
-            'commission_type', 'base_amount', 'commission_rate', 'commission_amount',
-            'status', 'transaction_date', 'approved_date', 'paid_date',
+            'property', 'property_id', 'property_title', 'reservation', 'reservation_id',
+            'commission_type', 'commission_type_display',
+            'base_amount', 'commission_rate', 'commission_amount',
+            'status', 'status_display', 'transaction_date', 'approved_date', 'paid_date',
             'notes', 'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'agent', 'agency', 'property', 'reservation',
-            'commission_amount', 'approved_date', 'paid_date',
+            'id', 'agent', 'agency', 'property', 'property_title', 'reservation',
+            'commission_amount', 'status_display', 'commission_type_display',
+            'approved_date', 'paid_date',
             'created_at', 'updated_at'
         ]
     
