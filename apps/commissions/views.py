@@ -21,7 +21,9 @@ class CommissionViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing commissions.
     """
-    queryset = Commission.objects.select_related('agent', 'agency', 'property', 'reservation')
+    queryset = Commission.objects.select_related(
+        'agent', 'agency', 'property', 'reservation',
+    ).prefetch_related('property__images')
     serializer_class = CommissionSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]

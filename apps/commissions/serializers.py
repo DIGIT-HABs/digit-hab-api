@@ -9,6 +9,31 @@ from apps.properties.models import Property
 from apps.reservations.models import Reservation
 
 
+def _absolute_media_url(request, path):
+    if not path:
+        return None
+    if str(path).startswith(('http://', 'https://')):
+        return path
+    if request:
+        return request.build_absolute_uri(path)
+    return path
+
+
+def _property_primary_image_url(request, prop):
+    if not prop:
+        return None
+    images = getattr(prop, '_prefetched_objects_cache', {}).get('images')
+    if images is not None:
+        primary = next((img for img in images if getattr(img, 'is_primary', False)), None)
+        if not primary and images:
+            primary = images[0]
+    else:
+        primary = prop.images.filter(is_primary=True).first() or prop.images.first()
+    if primary and primary.image:
+        return _absolute_media_url(request, primary.image.url)
+    return None
+
+
 class CommissionSerializer(serializers.ModelSerializer):
     """
     Serializer for commission management.
@@ -20,8 +45,12 @@ class CommissionSerializer(serializers.ModelSerializer):
     property = serializers.StringRelatedField(read_only=True)
     property_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     property_title = serializers.SerializerMethodField()
+    property_city = serializers.SerializerMethodField()
+    property_image_url = serializers.SerializerMethodField()
     reservation = serializers.StringRelatedField(read_only=True)
     reservation_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    agent_detail = serializers.SerializerMethodField()
+    reservation_detail = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     commission_type_display = serializers.CharField(source='get_commission_type_display', read_only=True)
 
@@ -30,18 +59,56 @@ class CommissionSerializer(serializers.ModelSerializer):
             return obj.property.title
         return None
 
+    def get_property_city(self, obj):
+        if obj.property_id and obj.property:
+            return obj.property.city
+        return None
+
+    def get_property_image_url(self, obj):
+        return _property_primary_image_url(self.context.get('request'), obj.property)
+
+    def get_agent_detail(self, obj):
+        if not obj.agent_id or not obj.agent:
+            return None
+        agent = obj.agent
+        return {
+            'id': str(agent.id),
+            'full_name': agent.get_full_name(),
+            'email': agent.email,
+            'phone': agent.phone or '',
+        }
+
+    def get_reservation_detail(self, obj):
+        if not obj.reservation_id or not obj.reservation:
+            return None
+        res = obj.reservation
+        return {
+            'id': str(res.id),
+            'reservation_type': res.reservation_type,
+            'reservation_type_display': res.get_reservation_type_display(),
+            'status': res.status,
+            'status_display': res.get_status_display(),
+            'scheduled_date': res.scheduled_date.isoformat() if res.scheduled_date else None,
+            'client_name': res.get_client_name(),
+            'payment_status': res.payment_status,
+            'payment_status_display': res.get_payment_status_display(),
+        }
+
     class Meta:
         model = Commission
         fields = [
-            'id', 'agent', 'agent_id', 'agency', 'agency_id',
-            'property', 'property_id', 'property_title', 'reservation', 'reservation_id',
+            'id', 'agent', 'agent_id', 'agent_detail', 'agency', 'agency_id',
+            'property', 'property_id', 'property_title', 'property_city', 'property_image_url',
+            'reservation', 'reservation_id', 'reservation_detail',
             'commission_type', 'commission_type_display',
             'base_amount', 'commission_rate', 'commission_amount',
             'status', 'status_display', 'transaction_date', 'approved_date', 'paid_date',
             'notes', 'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'id', 'agent', 'agency', 'property', 'property_title', 'reservation',
+            'id', 'agent', 'agent_detail', 'agency',
+            'property', 'property_title', 'property_city', 'property_image_url',
+            'reservation', 'reservation_detail',
             'commission_amount', 'status_display', 'commission_type_display',
             'approved_date', 'paid_date',
             'created_at', 'updated_at'
