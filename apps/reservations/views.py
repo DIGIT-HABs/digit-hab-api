@@ -321,11 +321,14 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
         notes = (request.data.get('notes') or '').strip()
         currency = reservation.currency or 'XOF'
+        from apps.commissions.services import on_reservation_paid
 
         if amount <= 0:
             with transaction.atomic():
                 reservation.payment_status = 'paid'
                 reservation.save(update_fields=['payment_status', 'updated_at'])
+                on_reservation_paid(reservation, amount=None)
+                reservation.refresh_from_db()
                 ReservationActivity.objects.create(
                     reservation=reservation,
                     activity_type='payment_completed',
@@ -364,6 +367,8 @@ class ReservationViewSet(viewsets.ModelViewSet):
             )
             reservation.payment_status = 'paid'
             reservation.save(update_fields=['payment_status', 'updated_at'])
+            on_reservation_paid(reservation, amount=amount)
+            reservation.refresh_from_db()
 
             ReservationActivity.objects.create(
                 reservation=reservation,

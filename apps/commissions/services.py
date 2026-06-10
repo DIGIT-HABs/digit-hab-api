@@ -104,3 +104,39 @@ def create_commission_for_reservation(reservation, *, source='auto', contract_ty
     )
     commission.save()
     return commission
+
+
+def on_reservation_paid(reservation, *, amount=None, complete_if_confirmed=True, source='payment_received'):
+    """
+    Actions après marquage payé d'une réservation :
+    - complète les montants manquants (amount / purchase_price)
+    - termine la réservation si elle est confirmée
+    - crée la commission agent si absente
+    """
+    update_fields = []
+
+    if amount is not None and amount > 0:
+        if not reservation.amount or reservation.amount <= 0:
+            reservation.amount = amount
+            update_fields.append('amount')
+        rtype = getattr(reservation, 'reservation_type', None)
+        if rtype in ('purchase', 'rent') and (
+            not reservation.purchase_price or reservation.purchase_price <= 0
+        ):
+            reservation.purchase_price = amount
+            update_fields.append('purchase_price')
+
+    if update_fields:
+        reservation.save(update_fields=update_fields + ['updated_at'])
+
+    if complete_if_confirmed and reservation.status in ('confirmed', 'in_progress'):
+        reservation.complete(notes='Paiement reçu.')
+
+    try:
+        return create_commission_for_reservation(reservation, source=source)
+    except Exception:
+        logger.exception(
+            'Échec création commission après paiement reservation=%s',
+            reservation.pk,
+        )
+        return None
