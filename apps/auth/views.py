@@ -207,13 +207,59 @@ class AgencyViewSet(ReadOnlyModelViewSet):
         """Get or manage agency users."""
         agency = self.get_object()
         if request.method == 'GET':
-            users = UserModel.objects.filter(profile__agency=agency)
-            serializer = UserSerializer(users, many=True)
+            users = UserModel.objects.filter(profile__agency=agency).select_related('profile')
+            serializer = UserSerializer(users, many=True, context={'request': request})
             return Response(serializer.data)
-        
+
         # POST would be for creating users for the agency
         # This is typically handled through the UserViewSet
-    
+
+    @action(detail=True, methods=['get'])
+    def agents(self, request, pk=None):
+        """Liste des agents immobiliers rattachés à l'agence."""
+        agency = self.get_object()
+        agents_qs = UserModel.objects.filter(
+            profile__agency=agency,
+            role='agent',
+        ).select_related('profile').order_by('-date_joined')
+        serializer = UserSerializer(agents_qs, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'agents/(?P<user_id>[^/.]+)/toggle-active',
+    )
+    def toggle_agent_active(self, request, pk=None, user_id=None):
+        """Activer / désactiver un agent de l'agence (admin)."""
+        actor = request.user
+        if not (
+            actor.is_staff
+            or actor.is_superuser
+            or getattr(actor, 'role', None) == 'admin'
+        ):
+            return Response(
+                {'detail': 'Seuls les administrateurs peuvent modifier le statut des agents.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        agency = self.get_object()
+        agent = UserModel.objects.filter(
+            pk=user_id,
+            profile__agency=agency,
+            role='agent',
+        ).first()
+        if not agent:
+            return Response({'detail': 'Agent introuvable pour cette agence.'}, status=status.HTTP_404_NOT_FOUND)
+
+        raw_active = request.data.get('is_active')
+        if raw_active is None:
+            agent.is_active = not agent.is_active
+        else:
+            agent.is_active = bool(raw_active)
+        agent.save(update_fields=['is_active', 'updated_at'])
+        serializer = UserSerializer(agent, context={'request': request})
+        return Response(serializer.data)
+
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
         """Get agency statistics."""
