@@ -133,7 +133,17 @@ def on_reservation_paid(reservation, *, amount=None, complete_if_confirmed=True,
         reservation.complete(notes='Paiement reçu.')
 
     try:
-        return create_commission_for_reservation(reservation, source=source)
+        commission = create_commission_for_reservation(reservation, source=source)
+        if not commission:
+            agent = getattr(reservation, 'assigned_agent', None)
+            if agent:
+                commission = Commission.objects.filter(
+                    reservation=reservation,
+                    agent=agent,
+                ).first()
+        if commission and commission.status == 'pending':
+            commission.approve()
+        return commission
     except Exception:
         logger.exception(
             'Échec création commission après paiement reservation=%s',

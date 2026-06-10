@@ -6,6 +6,7 @@ Usage: python manage.py backfill_commissions [--dry-run]
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
+from apps.commissions.models import Commission
 from apps.reservations.models import Reservation
 from apps.commissions.services import create_commission_for_reservation
 
@@ -65,9 +66,19 @@ class Command(BaseCommand):
             else:
                 skipped += 1
 
+        approved = 0
+        if not dry_run:
+            for commission in Commission.objects.filter(
+                status='pending',
+                reservation__payment_status='paid',
+            ).select_related('reservation'):
+                commission.approve()
+                approved += 1
+
         self.stdout.write(
             self.style.NOTICE(
-                f'Terminé: {created} créée(s), {skipped} ignorée(s).'
+                f'Terminé: {created} créée(s), {skipped} ignorée(s)'
+                + (f', {approved} approuvée(s) (réservation payée)' if approved else '')
                 + (' (dry-run)' if dry_run else '')
             )
         )
