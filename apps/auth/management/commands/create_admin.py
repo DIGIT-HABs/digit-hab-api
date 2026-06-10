@@ -65,7 +65,48 @@ class Command(BaseCommand):
             help='Promouvoir un compte existant (même email) en admin',
         )
 
+    def _database_label(self):
+        from django.conf import settings
+
+        db = settings.DATABASES.get('default', {})
+        engine = db.get('ENGINE', '')
+        if 'sqlite' in engine:
+            return f'SQLite — {db.get("NAME", "?")}'
+        return f'{engine} — {db.get("HOST", "?")}/{db.get("NAME", "?")}'
+
+    def _warn_if_wrong_database(self):
+        from django.conf import settings
+        import os
+
+        engine = settings.DATABASES.get('default', {}).get('ENGINE', '')
+        if 'sqlite' not in engine:
+            return
+
+        self.stdout.write('')
+        self.stdout.write(
+            self.style.ERROR(
+                'ATTENTION : vous utilisez SQLite (base de DEV locale).'
+            )
+        )
+        self.stdout.write(
+            self.style.ERROR(
+                "L'API en production (Docker) utilise PostgreSQL — "
+                'cet admin ne pourra PAS se connecter à l\'app mobile/API prod.'
+            )
+        )
+        if os.path.exists('docker-compose.prod.yml') or '/opt/apps/' in os.getcwd():
+            self.stdout.write(
+                self.style.WARNING(
+                    'Sur ce VPS, lancez plutôt :\n'
+                    '  docker compose -f docker-compose.prod.yml exec web '
+                    'python manage.py create_admin --email ... --password "..." --no-input'
+                )
+            )
+        self.stdout.write('')
+
     def handle(self, *args, **options):
+        self._warn_if_wrong_database()
+
         User = get_user_model()
         no_input = options['no_input']
 
@@ -135,18 +176,21 @@ class Command(BaseCommand):
                 user.save()
                 action = 'créé'
 
-        from django.conf import settings
-
-        db = settings.DATABASES.get('default', {})
-        db_label = f"{db.get('ENGINE', '?')} — {db.get('HOST', '?')}/{db.get('NAME', '?')}"
-
         self.stdout.write(
             self.style.SUCCESS(
                 f'Administrateur {action} : {user.get_full_name() or user.username} '
                 f'({user.email}) — role={user.role}'
             )
         )
-        self.stdout.write(f'Base de données : {db_label}')
+        self.stdout.write(f'Base de données : {self._database_label()}')
+
+        from django.conf import settings
+        if 'sqlite' in settings.DATABASES.get('default', {}).get('ENGINE', ''):
+            self.stdout.write(
+                self.style.ERROR(
+                    '→ Compte créé en SQLite uniquement. Relancez la commande dans Docker pour la prod.'
+                )
+            )
         self.stdout.write(
             'Connexion app : POST /api/auth/login/ avec email + mot de passe (sensible à la casse).'
         )
