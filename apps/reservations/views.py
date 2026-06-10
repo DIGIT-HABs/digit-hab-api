@@ -300,7 +300,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
             )
 
         raw_amount = request.data.get('amount')
-        if raw_amount is not None:
+        if raw_amount is not None and raw_amount != '':
             try:
                 amount = Decimal(str(raw_amount))
             except (InvalidOperation, TypeError, ValueError):
@@ -312,10 +312,34 @@ class ReservationViewSet(viewsets.ModelViewSet):
             amount = Decimal(str(reservation.get_outstanding_amount() or reservation.amount or 0))
 
         if amount <= 0:
-            return Response(
-                {'amount': 'Indiquez un montant positif à enregistrer.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            property_price = getattr(reservation.property, 'price', None)
+            if property_price:
+                try:
+                    amount = Decimal(str(property_price))
+                except (InvalidOperation, TypeError, ValueError):
+                    amount = Decimal('0')
+
+        notes = (request.data.get('notes') or '').strip()
+        currency = reservation.currency or 'XOF'
+
+        if amount <= 0:
+            with transaction.atomic():
+                reservation.payment_status = 'paid'
+                reservation.save(update_fields=['payment_status', 'updated_at'])
+                ReservationActivity.objects.create(
+                    reservation=reservation,
+                    activity_type='payment_completed',
+                    description=(
+                        f"Réservation marquée comme payée (sans montant) "
+                        f"par {request.user.get_full_name()}"
+                    ),
+                    performed_by=request.user,
+                )
+            serializer = self.get_serializer(reservation)
+            return Response({
+                'reservation': serializer.data,
+                'payment': None,
+            })
 
         payment_method = request.data.get('payment_method', 'cash')
         allowed_methods = {'cash', 'bank_transfer', 'check', 'card'}
@@ -324,9 +348,6 @@ class ReservationViewSet(viewsets.ModelViewSet):
                 {'payment_method': f'Méthode non supportée. Valeurs: {", ".join(sorted(allowed_methods))}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        notes = (request.data.get('notes') or '').strip()
-        currency = reservation.currency or 'XOF'
 
         with transaction.atomic():
             payment = Payment.objects.create(
