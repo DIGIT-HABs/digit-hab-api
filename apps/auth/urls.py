@@ -21,9 +21,17 @@ router.register(r'agencies', views.AgencyViewSet, basename='agency')
 from .test_views import TestAuthView
 
 urlpatterns = [
-    # API routes
+    # Inscription agence (public) — AVANT le router : sinon agencies/<pk>/ capture "register"
+    path('agencies/register/', views.AgencyCreateView.as_view(), name='agency_register'),
+    path(
+        'agencies/register-with-agent/',
+        views.AgencyWithAgentRegisterView.as_view(),
+        name='agency_register_with_agent',
+    ),
+
+    # API routes (ViewSets)
     path('', include(router.urls)),
-    
+
     # JWT Authentication
     path('login/', views.CustomTokenObtainPairView.as_view(), name='login'),
     path('token/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -45,14 +53,6 @@ urlpatterns = [
     # OAuth 2.0 - Social Authentication (V2)
     path('oauth/google/', views.GoogleAuthView.as_view(), name='google_auth'),
     path('oauth/apple/', views.AppleAuthView.as_view(), name='apple_auth'),
-    
-    # Agency registration (public endpoints)
-    path('agencies/register/', views.AgencyCreateView.as_view(), name='agency_register'),
-    path(
-        'agencies/register-with-agent/',
-        views.AgencyWithAgentRegisterView.as_view(),
-        name='agency_register_with_agent',
-    ),
     
     # User management (simple endpoints)
     path('users/list/', views.UserListView.as_view(), name='user_list'),
