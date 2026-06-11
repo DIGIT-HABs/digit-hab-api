@@ -73,8 +73,9 @@ class ReservationViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return Reservation.objects.none()
         
-        # Staff and superusers see all reservations
-        if user.is_staff or user.is_superuser:
+        # Admin plateforme : toutes les réservations (toutes agences)
+        from apps.core.user_roles import is_platform_admin
+        if is_platform_admin(user):
             return Reservation.objects.all().select_related(
                 'property', 'client_profile__user', 'assigned_agent', 'created_by'
             ).prefetch_related('payments')
@@ -513,8 +514,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return Payment.objects.none()
         
-        # Staff and superusers see all payments
-        if user.is_staff or user.is_superuser:
+        from apps.core.user_roles import is_platform_admin
+        if is_platform_admin(user):
             return Payment.objects.all().select_related('reservation__property', 'reservation__client_profile__user')
         
         # Agents see payments for their agency's reservations
@@ -716,7 +717,8 @@ class ContractViewSet(viewsets.ModelViewSet):
         qs = Contract.objects.select_related(
             'reservation', 'reservation__property', 'created_by', 'signed_by', 'template'
         )
-        if user.is_staff or user.is_superuser:
+        from apps.core.user_roles import is_platform_admin
+        if is_platform_admin(user):
             return qs
         if getattr(user, 'role', None) in ['agent', 'manager']:
             agency = getattr(getattr(user, 'profile', None), 'agency', None)
@@ -724,7 +726,6 @@ class ContractViewSet(viewsets.ModelViewSet):
                 return qs.filter(reservation__property__agency=agency)
             return qs.filter(reservation__assigned_agent=user)
         if getattr(user, 'role', None) == 'client':
-            from apps.crm.models import ClientProfile
             client_profile = getattr(user, 'client_profile', None)
             if client_profile:
                 return qs.filter(

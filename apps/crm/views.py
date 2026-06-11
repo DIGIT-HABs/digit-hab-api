@@ -1594,9 +1594,10 @@ class CrmAnalyticsView(APIView):
         try:
             from apps.commissions.models import Commission
             comm_qs = Commission.objects.filter(transaction_date__gte=since)
+            from apps.core.user_roles import is_platform_admin
             if is_agent:
                 comm_qs = comm_qs.filter(agent=user)
-            elif role == 'admin' or getattr(user, 'is_staff', False):
+            elif not is_platform_admin(user):
                 agency = user_agency(user)
                 if agency:
                     comm_qs = comm_qs.filter(agency=agency)
@@ -1655,4 +1656,90 @@ class CrmAnalyticsView(APIView):
                 },
                 'commissions': commissions_summary,
             },
+        })
+
+
+class AdminPlatformOverviewView(APIView):
+    """Vue consolidée plateforme pour l'administrateur (toutes agences)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from apps.core.user_roles import is_platform_admin
+        if not is_platform_admin(request.user):
+            return Response(
+                {'detail': 'Accès réservé aux administrateurs plateforme.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from apps.commissions.models import Commission
+        from apps.auth.signals import DEFAULT_CLIENTS_AGENCY_LICENSE
+
+        try:
+            from apps.reviews.models import Review
+        except ImportError:
+            Review = None
+
+        agencies_qs = Agency.objects.exclude(license_number=DEFAULT_CLIENTS_AGENCY_LICENSE)
+        agents_qs = User.objects.filter(role='agent').select_related('profile__agency')
+        clients_qs = ClientProfile.objects.all()
+        leads_qs = Lead.objects.all()
+        reservations_qs = Reservation.objects.all()
+        commissions_qs = Commission.objects.all()
+
+        reservations_by_status = {
+            row['status']: row['count']
+            for row in reservations_qs.values('status').annotate(count=Count('id'))
+        }
+        revenue = reservations_qs.filter(
+            payment_status='paid'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+
+        commissions_pending = commissions_qs.filter(status='pending').aggregate(
+            count=Count('id'),
+            amount=Sum('commission_amount'),
+        )
+        commissions_paid = commissions_qs.filter(status='paid').aggregate(
+            amount=Sum('commission_amount'),
+        )
+
+        reviews_pending = 0
+        if Review is not None:
+            reviews_pending = Review.objects.filter(
+                is_published=False,
+                moderated_at__isnull=True,
+            ).count()
+
+        return Response({
+            'agencies': {
+                'total': agencies_qs.count(),
+                'active': agencies_qs.filter(is_active=True).count(),
+            },
+            'agents': {
+                'total': agents_qs.count(),
+                'active': agents_qs.filter(is_active=True).count(),
+            },
+            'clients': {
+                'total': clients_qs.count(),
+                'active': clients_qs.filter(status='active').count(),
+            },
+            'leads': {
+                'total': leads_qs.count(),
+                'new': leads_qs.filter(status='new').count(),
+                'qualified': leads_qs.filter(qualification__in=['hot', 'warm']).count(),
+            },
+            'reservations': {
+                'total': reservations_qs.count(),
+                'pending': reservations_by_status.get('pending', 0),
+                'confirmed': reservations_by_status.get('confirmed', 0),
+                'completed': reservations_by_status.get('completed', 0),
+                'cancelled': reservations_by_status.get('cancelled', 0),
+                'total_revenue': float(revenue),
+            },
+            'commissions': {
+                'pending_count': commissions_pending['count'] or 0,
+                'pending_amount': float(commissions_pending['amount'] or 0),
+                'paid_amount': float(commissions_paid['amount'] or 0),
+            },
+            'reviews_pending_moderation': reviews_pending,
         })

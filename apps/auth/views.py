@@ -3,6 +3,7 @@ Views for authentication app.
 """
 
 from django.contrib.auth import get_user_model, logout
+from django.db.models import Q
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -754,3 +755,42 @@ class AppleAuthView(APIView):
                 'error': 'Apple authentication failed.',
                 'detail': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminAgentsListView(APIView):
+    """Liste de tous les agents immobiliers (admin plateforme)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(summary="Liste globale des agents (admin)")
+    def get(self, request):
+        from apps.core.user_roles import is_platform_admin
+        if not is_platform_admin(request.user):
+            return Response(
+                {'detail': 'Accès réservé aux administrateurs plateforme.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = UserModel.objects.filter(role='agent').select_related('profile__agency')
+        agency_id = request.query_params.get('agency')
+        if agency_id:
+            qs = qs.filter(profile__agency_id=agency_id)
+        is_active = request.query_params.get('is_active')
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active.lower() in ('true', '1', 'yes'))
+
+        search = (request.query_params.get('search') or '').strip()
+        if search:
+            qs = qs.filter(
+                Q(email__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(username__icontains=search)
+            )
+
+        serializer = UserSerializer(
+            qs.order_by('-date_joined'),
+            many=True,
+            context={'request': request},
+        )
+        return Response(serializer.data)

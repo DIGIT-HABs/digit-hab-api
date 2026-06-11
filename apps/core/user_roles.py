@@ -23,3 +23,12 @@ def user_is_staff_role(user) -> bool:
     if user.is_superuser or user.is_staff:
         return True
     return user_has_role(user, STAFF_ROLES)
+
+
+def is_platform_admin(user) -> bool:
+    """Admin plateforme : voit toutes les agences (role admin ou flags Django staff)."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return True
+    return get_user_role(user) == 'admin'

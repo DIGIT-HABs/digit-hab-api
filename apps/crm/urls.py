@@ -7,7 +7,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ClientProfileViewSet, PropertyInterestViewSet, ClientInteractionViewSet,
     LeadViewSet, PropertyMatchingViewSet, DashboardViewSet, ClientNoteViewSet,
-    ReportingViewSet, CrmAnalyticsView,
+    ReportingViewSet, CrmAnalyticsView, AdminPlatformOverviewView,
 )
 
 # Create router and register viewsets
@@ -23,6 +23,7 @@ router.register(r'reports', ReportingViewSet, basename='reporting')
 
 # URL patterns
 urlpatterns = [
+    path('admin/overview/', AdminPlatformOverviewView.as_view(), name='crm-admin-overview'),
     path('analytics/', CrmAnalyticsView.as_view(), name='crm-analytics'),
     path('', include(router.urls)),
 ]

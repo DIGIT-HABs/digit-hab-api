@@ -3,7 +3,7 @@ Permissions for reservations management.
 """
 
 from rest_framework import permissions
-from apps.auth.models import User
+from apps.core.user_roles import is_platform_admin
 
 
 class IsReservationOwnerOrAgent(permissions.BasePermission):
@@ -16,7 +16,7 @@ class IsReservationOwnerOrAgent(permissions.BasePermission):
         user = request.user
         
         # Staff and superusers have all permissions
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Check if user is the assigned agent
@@ -48,8 +48,7 @@ class CanManageReservations(permissions.BasePermission):
         if not user.is_authenticated:
             return False
         
-        # Staff and superusers have all permissions
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Agents can manage reservations
@@ -72,8 +71,7 @@ class CanViewAllReservations(permissions.BasePermission):
         if not user.is_authenticated:
             return False
         
-        # Staff and superusers can view all
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Agents can view reservations for their agency
@@ -101,7 +99,7 @@ class CanAccessPaymentData(permissions.BasePermission):
             return False
         
         # Staff and superusers have all permissions
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Check reservation access first
@@ -137,7 +135,7 @@ class CanProcessPayments(permissions.BasePermission):
             return False
         
         # Staff and superusers can process payments
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Managers can process payments
@@ -165,7 +163,7 @@ class IsAgencyMember(permissions.BasePermission):
             return False
         
         # Staff and superusers have all permissions
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Get user's agency
@@ -197,7 +195,7 @@ class CanScheduleVisits(permissions.BasePermission):
             return False
         
         # Staff and superusers can schedule visits
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Agent assigned to the property can schedule visits
@@ -230,7 +228,7 @@ class CanModifyReservationStatus(permissions.BasePermission):
             return False
         
         # Staff and superusers can modify any status
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         
         # Assigned agent can modify status
@@ -269,7 +267,7 @@ class IsContractOwnerOrAgent(permissions.BasePermission):
         user = request.user
         if not user.is_authenticated:
             return False
-        if user.is_staff or user.is_superuser:
+        if is_platform_admin(user):
             return True
         res = obj.reservation
         if res.assigned_agent and res.assigned_agent == user:
@@ -288,7 +286,7 @@ class CanManageContracts(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        if request.user.is_staff or request.user.is_superuser:
+        if is_platform_admin(request.user):
             return True
         if getattr(request.user, 'role', None) in ['agent', 'manager']:
             return True
