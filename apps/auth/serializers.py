@@ -333,6 +333,99 @@ class AgencyCreateSerializer(serializers.ModelSerializer):
         return Agency.objects.create(**validated_data)
 
 
+class AgencyWithAgentRegisterSerializer(serializers.Serializer):
+    """Inscription publique : créer une agence + le compte agent fondateur en une étape."""
+
+    name = serializers.CharField(max_length=255)
+    legal_name = serializers.CharField(required=False, allow_blank=True, default='')
+    license_number = serializers.CharField()
+    vat_number = serializers.CharField(required=False, allow_blank=True, default='')
+    email = serializers.EmailField()
+    phone = serializers.CharField(max_length=20)
+    website = serializers.URLField(required=False, allow_blank=True, default='')
+    logo = OptionalImageField(required=False, allow_null=True)
+    address_line1 = serializers.CharField()
+    address_line2 = serializers.CharField(required=False, allow_blank=True, default='')
+    city = serializers.CharField()
+    postal_code = serializers.CharField()
+    country = serializers.CharField(default='Sénégal')
+    subscription_type = serializers.ChoiceField(
+        choices=['trial', 'basic', 'premium', 'enterprise'],
+        default='trial',
+        required=False,
+    )
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True)
+
+    def validate_license_number(self, value):
+        if Agency.objects.filter(license_number=value).exists():
+            raise serializers.ValidationError('Ce numéro de licence est déjà utilisé.')
+        return value
+
+    def validate_vat_number(self, value):
+        if value and Agency.objects.filter(vat_number=value).exists():
+            raise serializers.ValidationError('Ce numéro de TVA est déjà utilisé.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({
+                'password_confirm': 'Les mots de passe ne correspondent pas.',
+            })
+        if UserModel.objects.filter(email=attrs['email']).exists():
+            raise serializers.ValidationError({
+                'email': 'Un compte existe déjà avec cet email.',
+            })
+        return attrs
+
+    def create(self, validated_data):
+        from django.db import transaction
+
+        first_name = validated_data.pop('first_name')
+        last_name = validated_data.pop('last_name')
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm')
+
+        agency_keys = (
+            'name', 'legal_name', 'license_number', 'vat_number', 'email', 'phone',
+            'website', 'logo', 'address_line1', 'address_line2', 'city', 'postal_code',
+            'country', 'subscription_type',
+        )
+        agency_data = {key: validated_data[key] for key in agency_keys}
+
+        with transaction.atomic():
+            agency_serializer = AgencyCreateSerializer(data=agency_data)
+            agency_serializer.is_valid(raise_exception=True)
+            agency = agency_serializer.save()
+
+            email = agency_data['email']
+            username = email.split('@')[0]
+            base_username = username
+            counter = 1
+            while UserModel.objects.filter(username=username).exists():
+                username = f'{base_username}{counter}'
+                counter += 1
+
+            user = UserModel.objects.create(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=agency_data.get('phone') or '',
+                role='agent',
+            )
+            user.set_password(password)
+            user.save()
+
+            profile = user.profile
+            profile.agency = agency
+            profile.save(update_fields=['agency'])
+
+        return {'agency': agency, 'user': user}
+
+
 class AgencyUpdateSerializer(serializers.ModelSerializer):
     """Serializer for updating agency (e.g. logo, name)."""
     

@@ -46,8 +46,13 @@ urlpatterns = [
     path('oauth/google/', views.GoogleAuthView.as_view(), name='google_auth'),
     path('oauth/apple/', views.AppleAuthView.as_view(), name='apple_auth'),
     
-    # Agency registration (public endpoint)
+    # Agency registration (public endpoints)
     path('agencies/register/', views.AgencyCreateView.as_view(), name='agency_register'),
+    path(
+        'agencies/register-with-agent/',
+        views.AgencyWithAgentRegisterView.as_view(),
+        name='agency_register_with_agent',
+    ),
     
     # User management (simple endpoints)
     path('users/list/', views.UserListView.as_view(), name='user_list'),

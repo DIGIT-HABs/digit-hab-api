@@ -28,7 +28,7 @@ from .serializers import (
     PasswordChangeSerializer, PasswordResetSerializer, PasswordResetConfirmSerializer,
     LogoutResponseSerializer, TokenVerifyResponseSerializer, RefreshTokenSerializer,
     GoogleAuthSerializer, AppleAuthSerializer, RegisterSerializer,
-    AgentCreateSerializer,
+    AgentCreateSerializer, AgencyWithAgentRegisterSerializer,
 )
 from .permissions import IsOwnerOrReadOnly, IsAdminUser, IsOwner
 
@@ -337,6 +337,46 @@ class AgencyCreateView(CreateModelMixin, generics.GenericAPIView):
         agency = serializer.save()
         out = AgencySerializer(agency, context={'request': request})
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+
+class AgencyWithAgentRegisterView(generics.GenericAPIView):
+    """
+    Inscription publique : agence + compte agent fondateur (sans connexion préalable).
+    """
+
+    permission_classes = [AllowAny]
+    serializer_class = AgencyWithAgentRegisterSerializer
+
+    @extend_schema(
+        summary="Inscription agence + agent",
+        description="Crée une agence et le compte agent du responsable, puis retourne les tokens JWT.",
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
+        agency = result['agency']
+        user = result['user']
+        refresh = RefreshToken.for_user(user)
+        agency_data = AgencySerializer(agency, context={'request': request}).data
+        return Response(
+            {
+                'message': 'Agence et compte agent créés avec succès.',
+                'agency': agency_data,
+                'user': {
+                    'id': str(user.id),
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': user.role,
+                    'agency_id': str(agency.id),
+                },
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
