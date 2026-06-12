@@ -20,8 +20,9 @@ wifi.wolofdigital.site {
 # 	reverse_proxy 127.0.0.1:3003
 # }
 
-# Digit-Hab — API Django (Gunicorn systemd ou Docker sur 3004)
+# Digit-Hab — API Django (Daphne ASGI sur 3004 — requis pour /ws/* chat & notifications)
 # /media/* doit être servi par Caddy AVANT le reverse_proxy (sinon 404 Django).
+# reverse_proxy transmet automatiquement l'upgrade WebSocket vers Daphne.
 api.digit-hab.wolofdigital.site {
 	handle /media/* {
 		root * /opt/apps/digit-hab-api

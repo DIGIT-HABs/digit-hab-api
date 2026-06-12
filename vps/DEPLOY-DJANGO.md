@@ -287,7 +287,9 @@ ls -la /opt/apps/digit-hab-api/media/properties/images/
 
 ---
 
-## 10. systemd (Gunicorn)
+## 10. systemd (Daphne ASGI — requis pour WebSockets)
+
+**Important :** Gunicorn (`wsgi:application`) ne gère **pas** les WebSockets (`/ws/messaging/`, `/ws/notifications/`). Utilisez **Daphne** avec `asgi:application`.
 
 ```bash
 sudo cp /opt/apps/digit-hab-api/Django/vps/systemd/digit-hab-api.service.example \
@@ -302,7 +304,9 @@ Points à contrôler dans `/etc/systemd/system/digit-hab-api.service` :
 | `WorkingDirectory` | `/opt/apps/digit-hab-api` |
 | `Environment` | `DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod` |
 | `EnvironmentFile` | `-/opt/apps/digit-hab-api/.env` |
-| `ExecStart` | `.../gunicorn digit_hab_crm.wsgi:application --bind 127.0.0.1:3004 ...` |
+| `ExecStart` | `.../daphne -b 127.0.0.1 -p 3004 digit_hab_crm.asgi:application` |
+
+Redis doit tourner (`redis-server`) : `CHANNEL_LAYERS` en prod utilise Redis.
 
 Correction automatique si l’ancienne unité référence `config.wsgi` :
 
@@ -324,6 +328,20 @@ Logs en continu :
 ```bash
 sudo journalctl -u digit-hab-api.service -f
 ```
+
+### Vérifier les WebSockets (chat)
+
+```bash
+# Doit répondre 101 Switching Protocols (pas 404/502)
+curl -sI -N \
+  -H "Connection: Upgrade" \
+  -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" \
+  -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  "https://api.digit-hab.wolofdigital.site/ws/messaging/chat/00000000-0000-0000-0000-000000000000/"
+```
+
+Si la connexion échoue alors que `/api/` fonctionne : l’unité systemd utilise encore Gunicorn → repasser à Daphne (voir ci-dessus).
 
 ---
 

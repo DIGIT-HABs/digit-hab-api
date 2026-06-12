@@ -1,16 +1,16 @@
-# Digit-Hab API — Gunicorn sur 127.0.0.1:3004
+# Digit-Hab API — Daphne (ASGI) sur 127.0.0.1:3004
 # Projet : https://github.com/DIGIT-HABs/digit-hab-api
-# WSGI : digit_hab_crm.wsgi:application
+# ASGI : digit_hab_crm.asgi:application  (HTTP + WebSockets /ws/*)
 # Settings prod : digit_hab_crm.settings.prod
 #
-# Prérequis : PostgreSQL + Redis accessibles (DB_HOST / REDIS_URL dans .env).
-# Alternative plus simple : Docker Compose (voir DEPLOY-DJANGO.md § Docker).
+# Prérequis : PostgreSQL + Redis (CHANNEL_LAYERS en prod utilise Redis).
+# Gunicorn/WSGI ne gère PAS les WebSockets (chat, notifications).
 #
 # sudo cp .../digit-hab-api.service.example /etc/systemd/system/digit-hab-api.service
 # sudo systemctl daemon-reload && sudo systemctl enable --now digit-hab-api.service
 
 [Unit]
-Description=Digit-Hab API (Django + Gunicorn sur 3004)
+Description=Digit-Hab API (Django + Daphne ASGI sur 3004)
 After=network.target postgresql.service redis-server.service
 Wants=postgresql.service redis-server.service
 
@@ -22,14 +22,10 @@ WorkingDirectory=/opt/apps/digit-hab-api
 Environment=PYTHONUNBUFFERED=1
 Environment=DJANGO_SETTINGS_MODULE=digit_hab_crm.settings.prod
 EnvironmentFile=-/opt/apps/digit-hab-api/.env
-ExecStart=/opt/apps/digit-hab-api/venv/bin/gunicorn digit_hab_crm.wsgi:application \
-  --bind 127.0.0.1:3004 \
-  --workers 3 \
-  --worker-class gthread \
-  --threads 2 \
-  --timeout 120 \
-  --access-logfile - \
-  --error-logfile -
+ExecStart=/opt/apps/digit-hab-api/venv/bin/daphne \
+  -b 127.0.0.1 \
+  -p 3004 \
+  digit_hab_crm.asgi:application
 Restart=on-failure
 RestartSec=5
 MemoryMax=1G
