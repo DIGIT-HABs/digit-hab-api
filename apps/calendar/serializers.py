@@ -168,14 +168,19 @@ class VisitScheduleSerializer(serializers.ModelSerializer):
     
     def get_property_data(self, obj):
         """Retourne les données de la propriété"""
-        if hasattr(obj.property, 'title'):
-            return {
-                'id': obj.property.id,
-                'title': obj.property.title,
-                'address': str(obj.property.address) if obj.property.address else '',
-                'type': obj.property.get_property_type_display() if obj.property.property_type else '',
-            }
-        return None
+        prop = getattr(obj, 'property', None)
+        if not prop:
+            return None
+        try:
+            address = prop.get_full_address() if hasattr(prop, 'get_full_address') else ''
+        except Exception:
+            address = getattr(prop, 'address_line1', '') or ''
+        return {
+            'id': prop.id,
+            'title': getattr(prop, 'title', ''),
+            'address': address,
+            'type': prop.get_property_type_display() if getattr(prop, 'property_type', None) else '',
+        }
     
     def validate_scheduled_date(self, value):
         """Valide que la date de visite n'est pas dans le passé"""

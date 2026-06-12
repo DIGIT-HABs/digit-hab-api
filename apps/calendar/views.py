@@ -316,7 +316,11 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
         return queryset.filter(Q(client=user) | Q(agent=user))
 
     def list(self, request, *args, **kwargs):
-        CalendarService.sync_schedules_for_user(request.user)
+        try:
+            CalendarService.sync_schedules_for_user(request.user)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Sync calendrier (list)')
         return super().list(request, *args, **kwargs)
     
     def perform_create(self, serializer):
@@ -428,7 +432,11 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def calendar_view(self, request):
         """Vue calendrier pour une période donnée"""
-        CalendarService.sync_schedules_for_user(request.user)
+        try:
+            CalendarService.sync_schedules_for_user(request.user)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('Sync calendrier (calendar_view)')
 
         start_date = request.query_params.get('start_date', date.today().isoformat())
         end_date = request.query_params.get('end_date', (date.today() + timedelta(days=30)).isoformat())

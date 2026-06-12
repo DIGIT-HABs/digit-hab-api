@@ -548,8 +548,9 @@ class CalendarService:
     def ensure_schedule_from_reservation(reservation: Reservation) -> Optional[VisitSchedule]:
         """Crée une planification simple à partir d'une réservation existante."""
         try:
-            if hasattr(reservation, 'schedule') and reservation.schedule_id:
-                return reservation.schedule
+            existing = VisitSchedule.objects.filter(reservation_id=reservation.id).first()
+            if existing:
+                return existing
             if not reservation.scheduled_date or not reservation.property_id:
                 return None
 
