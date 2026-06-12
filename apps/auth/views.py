@@ -16,6 +16,7 @@ from rest_framework.mixins import ListModelMixin, CreateModelMixin
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -609,6 +610,15 @@ class CurrentUserView(APIView):
     """
     
     permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+    def _serializer(self, request, partial=False):
+        return UserSerializer(
+            request.user,
+            data=request.data,
+            partial=partial,
+            context={'request': request},
+        )
     
     @extend_schema(
         summary="Profil utilisateur actuel",
@@ -617,7 +627,7 @@ class CurrentUserView(APIView):
     )
     def get(self, request):
         """Get current user profile."""
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
     
     @extend_schema(
@@ -628,7 +638,7 @@ class CurrentUserView(APIView):
     )
     def put(self, request):
         """Update current user profile."""
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer = self._serializer(request, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -642,7 +652,7 @@ class CurrentUserView(APIView):
     )
     def patch(self, request):
         """Partially update current user profile."""
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer = self._serializer(request, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
