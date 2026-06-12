@@ -27,8 +27,16 @@ class ConversationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing conversations.
     """
-    queryset = Conversation.objects.select_related('property').prefetch_related(
-        'participants', 'messages', 'property__images'
+    queryset = Conversation.objects.select_related(
+        'property',
+        'property__agent',
+        'client',
+        'client__user',
+        'last_message_by',
+    ).prefetch_related(
+        'participants',
+        'messages',
+        'property__images',
     ).all()
     serializer_class = ConversationSerializer
     permission_classes = [permissions.IsAuthenticated]

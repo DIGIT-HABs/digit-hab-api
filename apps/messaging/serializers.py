@@ -50,7 +50,7 @@ class PropertyCardSerializer(serializers.Serializer):
         return None
 
 
-def _get_user_avatar_url(user: User):
+def _get_user_avatar_url(user: User, request=None):
     """
     Helper sécurisé pour récupérer l'URL de l'avatar d'un utilisateur.
     Évite les ValueError lorsque aucun fichier n'est associé.
@@ -60,9 +60,48 @@ def _get_user_avatar_url(user: User):
     if not avatar or not getattr(avatar, "name", ""):
         return None
     try:
-        return avatar.url
+        url = avatar.url
+        if request and url and not str(url).startswith('http'):
+            return request.build_absolute_uri(url)
+        return url
     except Exception:
         return None
+
+
+def _participant_payload(user: User, request=None):
+    """Dict standard pour affichage profil dans la messagerie."""
+    return {
+        'id': str(user.id),
+        'name': user.get_full_name() or user.email or user.username,
+        'email': user.email or '',
+        'avatar': _get_user_avatar_url(user, request),
+        'role': getattr(user, 'role', None),
+    }
+
+
+def _resolve_other_user(conversation, current_user):
+    """Retrouve l'autre interlocuteur (participants, agent propriété, client CRM)."""
+    if not current_user or not getattr(current_user, 'is_authenticated', False):
+        return None
+
+    current_pk = current_user.pk
+    for participant in conversation.participants.all():
+        if participant.pk != current_pk:
+            return participant
+
+    prop = getattr(conversation, 'property', None)
+    if prop is not None:
+        agent = getattr(prop, 'agent', None)
+        if agent and agent.pk != current_pk:
+            return agent
+
+    client = getattr(conversation, 'client', None)
+    if client is not None:
+        client_user = getattr(client, 'user', None)
+        if client_user and client_user.pk != current_pk:
+            return client_user
+
+    return None
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -95,7 +134,8 @@ class MessageSerializer(serializers.ModelSerializer):
     
     def get_sender_avatar(self, obj):
         """Get sender avatar URL (champ avatar sur User)."""
-        return _get_user_avatar_url(obj.sender)
+        request = self.context.get('request')
+        return _get_user_avatar_url(obj.sender, request)
     
     def get_is_own(self, obj):
         """Check if message is from current user."""
@@ -154,16 +194,11 @@ class ConversationSerializer(serializers.ModelSerializer):
     def get_other_participant(self, obj):
         """Get other participant (not current user)."""
         request = self.context.get('request')
-        if request and request.user:
-            other = obj.participants.exclude(id=request.user.id).first()
-            if other:
-                return {
-                    'id': str(other.id),
-                    'name': other.get_full_name() or other.email,
-                    'email': other.email,
-                    # Avatar vient directement du modèle User (champ avatar)
-                    'avatar': _get_user_avatar_url(other),
-                }
+        if not request or not request.user.is_authenticated:
+            return None
+        other = _resolve_other_user(obj, request.user)
+        if other:
+            return _participant_payload(other, request)
         return None
 
     def get_property_detail(self, obj):

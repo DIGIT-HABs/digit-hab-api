@@ -333,16 +333,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def serialize_message(self, message):
         """Serialize message for WebSocket."""
+        from .serializers import _get_user_avatar_url
+
         return {
             'id': str(message.id),
+            'conversation': str(message.conversation.id),
             'conversation_id': str(message.conversation.id),
             'sender_id': str(message.sender.id),
             'sender_name': message.sender.get_full_name() or message.sender.email,
+            'sender_avatar': _get_user_avatar_url(message.sender),
             'sender_email': message.sender.email,
             'content': message.content,
             'message_type': message.message_type,
+            'image': message.image.url if message.image and getattr(message.image, 'name', '') else None,
+            'file': message.file.url if message.file and getattr(message.file, 'name', '') else None,
+            'is_deleted': message.is_deleted,
             'created_at': message.created_at.isoformat(),
-            'is_own': message.sender.id == self.user.id
+            'is_own': message.sender.id == self.user.id,
         }
     
     @database_sync_to_async
