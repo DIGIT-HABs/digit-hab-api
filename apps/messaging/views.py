@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count, Max
+from django.db.models import Q, Count, Max, Prefetch
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 
@@ -34,7 +34,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
         'client__user',
         'last_message_by',
     ).prefetch_related(
-        'participants',
+        # Prefetch complet : filter(participants=user) sinon ne charge que l'utilisateur courant
+        Prefetch('participants', queryset=User.objects.all()),
         'messages',
         'property__images',
     ).all()
@@ -169,20 +170,22 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Check if conversation already exists
-        existing = Conversation.objects.filter(
-            participants__in=[request.user]
-        ).annotate(
-            participant_count=Count('participants')
-        ).filter(
+        property_id = request.data.get('property_id')
+
+        # Check if conversation already exists (même participants + même propriété si fournie)
+        existing = Conversation.objects.filter(participants=request.user)
+        if property_id:
+            existing = existing.filter(property_id=property_id)
+        existing = existing.annotate(participant_count=Count('participants')).filter(
             participant_count=len(participant_ids)
         )
-        
         for participant in participants:
             existing = existing.filter(participants=participant)
-        
+
         if existing.exists():
             conversation = existing.first()
+            # Réparer les participants manquants (ex. agent absent du M2M)
+            conversation.participants.set(participants)
             serializer = self.get_serializer(conversation, context={'request': request})
             return Response(serializer.data)
         
