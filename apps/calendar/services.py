@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, date, time, timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
@@ -526,6 +527,96 @@ class ConflictDetectionService:
 
 class CalendarService:
     """Service principal du calendrier intelligent"""
+
+    RESERVATION_STATUS_MAP = {
+        'pending': 'pending',
+        'confirmed': 'confirmed',
+        'cancelled': 'cancelled',
+        'completed': 'completed',
+        'expired': 'cancelled',
+    }
+
+    @staticmethod
+    def _reservation_client_user(reservation: Reservation):
+        if getattr(reservation, 'client_profile', None) and getattr(
+            reservation.client_profile, 'user', None
+        ):
+            return reservation.client_profile.user
+        return getattr(reservation, 'created_by', None)
+
+    @staticmethod
+    def ensure_schedule_from_reservation(reservation: Reservation) -> Optional[VisitSchedule]:
+        """Crée une planification simple à partir d'une réservation existante."""
+        try:
+            if hasattr(reservation, 'schedule') and reservation.schedule_id:
+                return reservation.schedule
+            if not reservation.scheduled_date or not reservation.property_id:
+                return None
+
+            client_user = CalendarService._reservation_client_user(reservation)
+            agent = reservation.assigned_agent
+            if not client_user or not agent:
+                return None
+
+            scheduled_dt = reservation.scheduled_date
+            if timezone.is_aware(scheduled_dt):
+                scheduled_dt = timezone.localtime(scheduled_dt)
+
+            start_time = scheduled_dt.time()
+            duration = reservation.duration_minutes or 60
+            end_dt = scheduled_dt + timedelta(minutes=duration)
+            end_time = end_dt.time()
+
+            return VisitSchedule.objects.create(
+                client=client_user,
+                agent=agent,
+                property=reservation.property,
+                reservation=reservation,
+                scheduled_date=scheduled_dt.date(),
+                scheduled_start_time=start_time,
+                scheduled_end_time=end_time,
+                matching_algorithm='best_match',
+                status=CalendarService.RESERVATION_STATUS_MAP.get(
+                    reservation.status, 'scheduled'
+                ),
+                priority='normal',
+            )
+        except Exception as e:
+            logger.error(f"Erreur création planification depuis réservation {reservation.id}: {e}")
+            return None
+
+    @staticmethod
+    def sync_schedules_for_user(user) -> int:
+        """Synchronise les réservations planifiées sans VisitSchedule."""
+        from apps.core.user_roles import is_platform_admin, get_user_role
+
+        reservations = Reservation.objects.filter(
+            scheduled_date__isnull=False,
+            schedule__isnull=True,
+        ).select_related(
+            'property',
+            'assigned_agent',
+            'client_profile__user',
+            'created_by',
+        )
+
+        role = get_user_role(user)
+        if user.is_superuser or is_platform_admin(user):
+            pass
+        elif role in ('agent', 'manager'):
+            reservations = reservations.filter(assigned_agent=user)
+        elif role == 'client':
+            reservations = reservations.filter(
+                Q(client_profile__user=user) | Q(created_by=user)
+            )
+        else:
+            return 0
+
+        created = 0
+        for reservation in reservations.iterator():
+            if CalendarService.ensure_schedule_from_reservation(reservation):
+                created += 1
+        return created
     
     @staticmethod
     def create_smart_schedule(

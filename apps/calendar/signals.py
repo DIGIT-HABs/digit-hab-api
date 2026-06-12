@@ -25,19 +25,27 @@ logger = logging.getLogger(__name__)
 def handle_reservation_for_scheduling(sender, instance, created, **kwargs):
     """Gère automatiquement la planification lors de la création de réservation"""
     
-    if created and instance.reservation_type in ['visit', 'viewing', 'evaluation']:
+    if created and instance.scheduled_date:
         try:
             # Créer automatiquement une planification intelligente
             schedule = CalendarService.create_smart_schedule(
                 reservation_id=str(instance.id),
-                client_preferences=None,  # Utiliser les préférences par défaut
+                client_preferences=None,
                 algorithm='best_match'
             )
             
             if schedule:
                 logger.info(f"Planification automatique créée pour réservation {instance.id}")
             else:
-                logger.warning(f"Impossible de créer une planification automatique pour {instance.id}")
+                schedule = CalendarService.ensure_schedule_from_reservation(instance)
+                if schedule:
+                    logger.info(
+                        f"Planification simple créée pour réservation {instance.id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Impossible de créer une planification pour {instance.id}"
+                    )
                 
         except Exception as e:
             logger.error(f"Erreur lors de la planification automatique: {e}")

@@ -296,25 +296,28 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Retourne les planifications selon les permissions"""
+        from apps.core.user_roles import is_platform_admin, get_user_role
+
         queryset = VisitSchedule.objects.select_related(
             'client', 'agent', 'property', 'reservation'
         )
-        
         user = self.request.user
-        
-        if user.is_superuser:
+
+        if user.is_superuser or is_platform_admin(user):
             return queryset
-        
-        # Les agents voient leurs propres planifications
-        try:
-            profile = getattr(user, 'profile', None)
-            if profile and getattr(profile, 'role', None) in ['agent', 'manager', 'admin']:
-                return queryset.filter(agent=user)
-        except (AttributeError, Exception):
-            pass
-        
-        # Les clients voient leurs propres planifications
+
+        role = get_user_role(user)
+        if role in ('agent', 'manager', 'admin'):
+            return queryset.filter(agent=user)
+
+        if role == 'client':
+            return queryset.filter(client=user)
+
         return queryset.filter(Q(client=user) | Q(agent=user))
+
+    def list(self, request, *args, **kwargs):
+        CalendarService.sync_schedules_for_user(request.user)
+        return super().list(request, *args, **kwargs)
     
     def perform_create(self, serializer):
         """Crée une nouvelle planification"""
@@ -425,6 +428,8 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def calendar_view(self, request):
         """Vue calendrier pour une période donnée"""
+        CalendarService.sync_schedules_for_user(request.user)
+
         start_date = request.query_params.get('start_date', date.today().isoformat())
         end_date = request.query_params.get('end_date', (date.today() + timedelta(days=30)).isoformat())
         agent_id = request.query_params.get('agent_id')
@@ -438,16 +443,14 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        query = VisitSchedule.objects.filter(
+        query = self.get_queryset().filter(
             scheduled_date__range=[start_date, end_date]
         )
         
         if agent_id:
             query = query.filter(agent_id=agent_id)
-        elif not request.user.is_superuser:
-            query = query.filter(agent=request.user)
         
-        schedules = query.select_related('client', 'agent', 'property').order_by('scheduled_date', 'scheduled_start_time')
+        schedules = query.order_by('scheduled_date', 'scheduled_start_time')
         
         # Organiser par date
         calendar_data = {}
