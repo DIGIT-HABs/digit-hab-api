@@ -34,6 +34,8 @@ urlpatterns = [
         views.AdminAgentDetailView.as_view(),
         name='admin_agent_detail',
     ),
+    # AVANT le router : sinon users/me/ est capturé par UserViewSet.me (GET seul) → PATCH 405
+    path('users/me/', views.CurrentUserView.as_view(), name='current_user'),
 
     # API routes (ViewSets)
     path('', include(router.urls)),
@@ -51,8 +53,7 @@ urlpatterns = [
     path('logout/', views.LogoutView.as_view(), name='logout'),
     path('verify/', views.verify_token, name='verify_token'),
     path('update-profile/', views.update_profile, name='update_profile'),
-    path('users/me/', views.CurrentUserView.as_view(), name='current_user'),
-    
+
     # Test endpoint
     path('test-auth/', TestAuthView.as_view(), name='test_auth'),
     
