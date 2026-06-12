@@ -16,7 +16,7 @@ def client_profiles_for_user(user):
     """
     Même périmètre que ClientProfileViewSet.get_queryset pour un agent.
     """
-    qs = ClientProfile.objects.select_related('user')
+    qs = ClientProfile.objects.select_related('user', 'user__profile__agency')
     role = getattr(user, 'role', None)
 
     if role == 'admin' or getattr(user, 'is_staff', False):

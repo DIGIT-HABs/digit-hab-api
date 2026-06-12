@@ -794,3 +794,80 @@ class AdminAgentsListView(APIView):
             context={'request': request},
         )
         return Response(serializer.data)
+
+
+class AdminAgentDetailView(APIView):
+    """Fiche agent + statistiques (admin plateforme)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(summary="Détail agent et statistiques (admin)")
+    def get(self, request, agent_id):
+        from django.db.models import Sum, Count
+        from apps.core.user_roles import is_platform_admin
+        from apps.reservations.models import Reservation
+        from apps.commissions.models import Commission
+        from apps.crm.models import Lead
+
+        if not is_platform_admin(request.user):
+            return Response(
+                {'detail': 'Accès réservé aux administrateurs plateforme.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        agent = (
+            UserModel.objects.filter(role='agent', id=agent_id)
+            .select_related('profile__agency')
+            .first()
+        )
+        if not agent:
+            return Response({'detail': 'Agent introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        reservations_qs = Reservation.objects.filter(assigned_agent=agent)
+        reservations_by_status = {
+            row['status']: row['count']
+            for row in reservations_qs.values('status').annotate(count=Count('id'))
+        }
+        revenue = reservations_qs.filter(payment_status='paid').aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+
+        leads_qs = Lead.objects.filter(assigned_agent=agent)
+        commissions_qs = Commission.objects.filter(agent=agent)
+
+        client_ids = reservations_qs.filter(
+            client_profile__isnull=False
+        ).values_list('client_profile_id', flat=True).distinct()
+
+        commissions_pending = commissions_qs.filter(status='pending').aggregate(
+            amount=Sum('commission_amount'),
+        )
+        commissions_paid = commissions_qs.filter(status='paid').aggregate(
+            amount=Sum('commission_amount'),
+        )
+
+        return Response({
+            'agent': UserSerializer(agent, context={'request': request}).data,
+            'stats': {
+                'reservations': {
+                    'total': reservations_qs.count(),
+                    'pending': reservations_by_status.get('pending', 0),
+                    'confirmed': reservations_by_status.get('confirmed', 0),
+                    'completed': reservations_by_status.get('completed', 0),
+                    'cancelled': reservations_by_status.get('cancelled', 0),
+                },
+                'leads': {
+                    'total': leads_qs.count(),
+                    'qualified': leads_qs.filter(
+                        qualification__in=['hot', 'warm']
+                    ).count(),
+                },
+                'clients': len(set(client_ids)),
+                'commissions': {
+                    'total_count': commissions_qs.count(),
+                    'pending_amount': float(commissions_pending['amount'] or 0),
+                    'paid_amount': float(commissions_paid['amount'] or 0),
+                },
+                'revenue': float(revenue),
+            },
+        })

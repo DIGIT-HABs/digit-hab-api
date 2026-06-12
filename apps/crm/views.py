@@ -45,7 +45,7 @@ class ClientProfileViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing client profiles.
     """
-    queryset = ClientProfile.objects.select_related('user')
+    queryset = ClientProfile.objects.select_related('user', 'user__profile__agency')
     serializer_class = ClientProfileSerializer
     permission_classes = [permissions.IsAuthenticated, CanManageClientProfile]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -62,6 +62,20 @@ class ClientProfileViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter queryset based on user role and permissions."""
         queryset = client_profiles_for_user(self.request.user)
+
+        agency_id = self.request.query_params.get('agency')
+        if agency_id:
+            from apps.core.user_roles import is_platform_admin
+            if is_platform_admin(self.request.user):
+                queryset = queryset.filter(
+                    Q(user__profile__agency_id=agency_id)
+                    | Q(
+                        id__in=Reservation.objects.filter(
+                            property__agency_id=agency_id,
+                            client_profile__isnull=False,
+                        ).values_list('client_profile_id', flat=True)
+                    )
+                ).distinct()
 
         # Quick filters for list (agent dashboard)
         if self.action == 'list':

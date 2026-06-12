@@ -25,6 +25,8 @@ class ClientProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='user.get_full_name', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
     phone = serializers.CharField(source='user.phone', read_only=True, allow_blank=True)
+    agency_name = serializers.SerializerMethodField()
+    agency_id = serializers.SerializerMethodField()
     matching_properties = serializers.SerializerMethodField()
     conversion_score_display = serializers.CharField(source='get_conversion_score_display', read_only=True)
     
@@ -32,6 +34,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
         model = ClientProfile
         fields = [
             'id', 'user', 'user_id', 'username', 'full_name', 'email', 'phone',
+            'agency_name', 'agency_id',
             'date_of_birth', 'nationality', 'marital_status',
             'preferred_contact_method', 'preferred_contact_time',
             'max_budget', 'min_budget', 'preferred_property_types', 'preferred_locations',
@@ -45,10 +48,40 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'matching_properties'
         ]
         read_only_fields = [
-            'id', 'user', 'username', 'full_name', 'email', 'phone', 'last_property_view',
+            'id', 'user', 'username', 'full_name', 'email', 'phone',
+            'agency_name', 'agency_id',
+            'last_property_view',
             'total_properties_viewed', 'total_inquiries_made', 'conversion_score',
             'created_at', 'updated_at', 'matching_properties', 'conversion_score_display'
         ]
+    
+    def _client_agency(self, obj):
+        try:
+            profile = getattr(obj.user, 'profile', None)
+            if profile and profile.agency_id:
+                return profile.agency
+        except Exception:
+            pass
+        reservation = getattr(obj, '_primary_reservation', None)
+        if reservation is None:
+            from apps.reservations.models import Reservation
+            reservation = (
+                Reservation.objects.filter(client_profile=obj)
+                .select_related('property__agency')
+                .order_by('-created_at')
+                .first()
+            )
+        if reservation and reservation.property and reservation.property.agency_id:
+            return reservation.property.agency
+        return None
+
+    def get_agency_name(self, obj):
+        agency = self._client_agency(obj)
+        return agency.name if agency else None
+
+    def get_agency_id(self, obj):
+        agency = self._client_agency(obj)
+        return str(agency.id) if agency else None
     
     def get_matching_properties(self, obj):
         """Get matching properties for the client."""

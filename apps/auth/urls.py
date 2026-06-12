@@ -29,6 +29,11 @@ urlpatterns = [
         name='agency_register_with_agent',
     ),
     path('admin/agents/', views.AdminAgentsListView.as_view(), name='admin_agents_list'),
+    path(
+        'admin/agents/<uuid:agent_id>/',
+        views.AdminAgentDetailView.as_view(),
+        name='admin_agent_detail',
+    ),
 
     # API routes (ViewSets)
     path('', include(router.urls)),
