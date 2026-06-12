@@ -558,6 +558,8 @@ class CalendarService:
             agent = reservation.assigned_agent
             if not client_user or not agent:
                 return None
+            if getattr(agent, 'role', None) not in ('agent', 'manager', 'admin'):
+                return None
 
             scheduled_dt = reservation.scheduled_date
             if timezone.is_aware(scheduled_dt):
@@ -587,7 +589,7 @@ class CalendarService:
             return None
 
     @staticmethod
-    def sync_schedules_for_user(user) -> int:
+    def sync_schedules_for_user(user, platform_wide: bool = False) -> int:
         """Synchronise les réservations planifiées sans VisitSchedule."""
         from apps.core.user_roles import is_platform_admin, get_user_role
 
@@ -602,7 +604,13 @@ class CalendarService:
         )
 
         role = get_user_role(user)
-        if user.is_superuser or is_platform_admin(user):
+        own_filter = (
+            Q(assigned_agent=user)
+            | Q(client_profile__user=user)
+            | Q(created_by=user)
+        )
+
+        if platform_wide and (user.is_superuser or is_platform_admin(user)):
             pass
         elif role in ('agent', 'manager'):
             reservations = reservations.filter(assigned_agent=user)
@@ -610,8 +618,10 @@ class CalendarService:
             reservations = reservations.filter(
                 Q(client_profile__user=user) | Q(created_by=user)
             )
+        elif role == 'admin':
+            reservations = reservations.filter(own_filter)
         else:
-            return 0
+            reservations = reservations.filter(own_filter)
 
         created = 0
         for reservation in reservations.iterator():

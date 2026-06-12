@@ -295,29 +295,55 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def get_queryset(self):
-        """Retourne les planifications selon les permissions"""
+        """Retourne les planifications selon le rôle (pas toute la plateforme par défaut)."""
         from apps.core.user_roles import is_platform_admin, get_user_role
+        from apps.crm.services.scope import user_agency
 
         queryset = VisitSchedule.objects.select_related(
             'client', 'agent', 'property', 'reservation'
         )
         user = self.request.user
-
-        if user.is_superuser or is_platform_admin(user):
-            return queryset
-
         role = get_user_role(user)
-        if role in ('agent', 'manager', 'admin'):
-            return queryset.filter(agent=user)
+        platform_all = self.request.query_params.get('platform') == 'true'
 
-        if role == 'client':
-            return queryset.filter(client=user)
+        if platform_all and (user.is_superuser or is_platform_admin(user)):
+            qs = queryset
+        elif role == 'agent':
+            qs = queryset.filter(agent=user)
+        elif role == 'manager':
+            agency = user_agency(user)
+            if agency:
+                qs = queryset.filter(agent__profile__agency=agency)
+            else:
+                qs = queryset.filter(agent=user)
+        elif role == 'client':
+            qs = queryset.filter(client=user)
+        elif role == 'admin':
+            qs = queryset.filter(Q(agent=user) | Q(client=user))
+        else:
+            qs = queryset.filter(Q(client=user) | Q(agent=user))
 
-        return queryset.filter(Q(client=user) | Q(agent=user))
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        if start_date:
+            qs = qs.filter(scheduled_date__gte=start_date)
+        if end_date:
+            qs = qs.filter(scheduled_date__lte=end_date)
+
+        if self.request.query_params.get('upcoming') == 'true':
+            qs = qs.filter(scheduled_date__gte=date.today())
+        if self.request.query_params.get('past') == 'true':
+            qs = qs.filter(scheduled_date__lt=date.today())
+
+        return qs.order_by('scheduled_date', 'scheduled_start_time')
 
     def list(self, request, *args, **kwargs):
+        platform_wide = request.query_params.get('platform') == 'true'
         try:
-            CalendarService.sync_schedules_for_user(request.user)
+            CalendarService.sync_schedules_for_user(
+                request.user,
+                platform_wide=platform_wide,
+            )
         except Exception:
             import logging
             logging.getLogger(__name__).exception('Sync calendrier (list)')
@@ -432,8 +458,12 @@ class VisitScheduleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def calendar_view(self, request):
         """Vue calendrier pour une période donnée"""
+        platform_wide = request.query_params.get('platform') == 'true'
         try:
-            CalendarService.sync_schedules_for_user(request.user)
+            CalendarService.sync_schedules_for_user(
+                request.user,
+                platform_wide=platform_wide,
+            )
         except Exception:
             import logging
             logging.getLogger(__name__).exception('Sync calendrier (calendar_view)')
